@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { ConvexClientProvider } from "./ConvexClientProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,45 +29,47 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-950 text-slate-50`}
       >
-        <div className="min-h-screen flex">
-          <aside className="hidden md:flex w-64 flex-col border-r border-slate-800 bg-slate-950/80 px-5 py-6">
-            <div className="mb-8">
-              <span className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight text-slate-100">
-                <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-sky-500 text-xs font-bold">
-                  SS
+        <ConvexClientProvider>
+          <div className="min-h-screen flex">
+            <aside className="hidden md:flex w-64 flex-col border-r border-slate-800 bg-slate-950/80 px-5 py-6">
+              <div className="mb-8">
+                <span className="inline-flex items-center gap-2 text-sm font-semibold tracking-tight text-slate-100">
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-sky-500 text-xs font-bold">
+                    SS
+                  </span>
+                  Sandbox Studio
                 </span>
-                Sandbox Studio
-              </span>
-              <p className="mt-2 text-xs text-slate-400">
-                Visual dashboard for your Cloudflare Sandbox environments.
-              </p>
-            </div>
-            <nav className="space-y-1 text-sm">
-              <NavLink href="/">Overview</NavLink>
-              <NavLink href="/runs">Runs</NavLink>
-              <NavLink href="/files">Files</NavLink>
-            </nav>
-            <div className="mt-auto pt-6 text-[11px] text-slate-500">
-              Connected to existing Cloudflare Worker.
-            </div>
-          </aside>
-
-          <main className="flex-1 min-w-0 bg-slate-950 px-4 py-4 md:px-8 md:py-6">
-            <header className="mb-6 flex items-center justify-between gap-3">
-              <div>
-                <h1 className="text-lg font-semibold tracking-tight text-slate-50 md:text-xl">
-                  Sandbox dashboard
-                </h1>
-                <p className="mt-1 text-xs text-slate-400 md:text-sm">
-                  Inspect and orchestrate the Cloudflare Sandbox Worker from a
-                  modern React UI.
+                <p className="mt-2 text-xs text-slate-400">
+                  Visual dashboard for your Cloudflare Sandbox environments.
                 </p>
               </div>
-            </header>
+              <nav className="space-y-1 text-sm">
+                <NavLink href="/">Overview</NavLink>
+                <NavLink href="/runs">Runs</NavLink>
+                <NavLink href="/files">Files</NavLink>
+              </nav>
+              <div className="mt-auto pt-6 text-[11px] text-slate-500">
+                Connected to existing Cloudflare Worker.
+              </div>
+            </aside>
 
-            <div className="mx-auto max-w-6xl">{children}</div>
-          </main>
-        </div>
+            <main className="flex-1 min-w-0 bg-slate-950 px-4 py-4 md:px-8 md:py-6">
+              <header className="mb-6 flex items-center justify-between gap-3">
+                <div>
+                  <h1 className="text-lg font-semibold tracking-tight text-slate-50 md:text-xl">
+                    Sandbox dashboard
+                  </h1>
+                  <p className="mt-1 text-xs text-slate-400 md:text-sm">
+                    Inspect and orchestrate the Cloudflare Sandbox Worker from a
+                    modern React UI.
+                  </p>
+                </div>
+              </header>
+
+              <div className="mx-auto max-w-6xl">{children}</div>
+            </main>
+          </div>
+        </ConvexClientProvider>
       </body>
     </html>
   );
