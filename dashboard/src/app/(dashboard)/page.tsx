@@ -1,5 +1,5 @@
-import { SandboxConvexErrorBoundary } from "@/components/sandbox/SandboxConvexErrorBoundary";
-import { SandboxDashboard } from "@/components/sandbox/SandboxDashboard";
+import { SandboxConvexErrorBoundary } from "@/components/SandboxConvexErrorBoundary";
+import { SandboxDashboard } from "@/components/SandboxDashboard";
 
 export default function DashboardPage() {
   return (
