@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --local",
-    "dev:remote": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "generate": "node scripts/generate-starter-files.mjs",
+    "dev": "npm run generate && wrangler dev --local",
+    "dev:remote": "npm run generate && wrangler dev",
+    "deploy": "npm run generate && wrangler deploy",
     "cf-typegen": "wrangler types",
     "typecheck": "tsc --noEmit"
   },
