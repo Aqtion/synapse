@@ -20,10 +20,7 @@ export function SandboxDashboard() {
   const importFromGitHubAction = useAction(api.sandboxes.importFromGitHub);
   const createSandboxMutation = useMutation(api.sandboxes.createSandbox);
 
-  const workerBase =
-    typeof window !== "undefined"
-      ? process.env.NEXT_PUBLIC_WORKER_BASE_URL ?? ""
-      : "";
+  const workerBase = process.env.NEXT_PUBLIC_WORKER_BASE_URL ?? "";
   const hasWorkerUrl = !!workerBase;
 
   async function handleCreate(testers: TesterRow[]) {

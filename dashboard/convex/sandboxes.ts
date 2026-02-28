@@ -400,6 +400,21 @@ export const removeSandbox = mutation({
   },
 });
 
+export const renameSandbox = mutation({
+  args: { id: v.string(), name: v.string() },
+  handler: async (ctx, args) => {
+    const name = args.name.trim() || "Untitled";
+    const row = await ctx.db
+      .query("sandboxes")
+      .filter((q) => q.eq(q.field("id"), args.id))
+      .first();
+    if (row) {
+      await ctx.db.patch(row._id, { name });
+    }
+    return null;
+  },
+});
+
 /**
  * Calls the Cloudflare worker to initialize the sandbox (create files, start server).
  * Only the assigned tester can start the sandbox; identity is verified before calling the worker.

@@ -19,6 +19,32 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Synapse",
   description: "",
+  icons: [
+    {
+      rel: "icon",
+      type: "image/svg+xml",
+      url: "/synapse.svg",
+      media: "(prefers-color-scheme: light)",
+    },
+    {
+      rel: "icon",
+      type: "image/png",
+      url: "/synapse.png",
+      media: "(prefers-color-scheme: light)",
+    },
+    {
+      rel: "icon",
+      type: "image/svg+xml",
+      url: "/synapse-light.svg",
+      media: "(prefers-color-scheme: dark)",
+    },
+    {
+      rel: "icon",
+      type: "image/png",
+      url: "/synapse-light.png",
+      media: "(prefers-color-scheme: dark)",
+    },
+  ],
 };
 
 export default function RootLayout({

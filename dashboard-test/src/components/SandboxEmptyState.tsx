@@ -13,7 +13,8 @@ export function SandboxEmptyState({ onInviteTesters }: SandboxEmptyStateProps) {
       onClick={onInviteTesters}
       onKeyDown={
         onInviteTesters
-          ? (e) => (e.key === "Enter" || e.key === " ") && onInviteTesters()
+          ? (e: { key: string }) =>
+              (e.key === "Enter" || e.key === " ") && onInviteTesters()
           : undefined
       }
       tabIndex={onInviteTesters ? 0 : undefined}
@@ -25,7 +26,7 @@ export function SandboxEmptyState({ onInviteTesters }: SandboxEmptyStateProps) {
         {onInviteTesters && (
           <span className="inline-flex items-center gap-1.5 text-sm text-primary">
             <Plus className="size-4" />
-            Invite testers
+            Invite more testers!
           </span>
         )}
       </CardContent>

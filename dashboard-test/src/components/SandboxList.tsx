@@ -74,7 +74,7 @@ export function SandboxList({
           >
             <CardContent className="flex flex-1 items-center justify-center gap-2 text-muted-foreground hover:text-primary">
               <Plus className="size-5" />
-              <span className="font-medium">Invite more testers</span>
+              <span className="font-medium">Invite more testers!</span>
             </CardContent>
           </Card>
         )}
