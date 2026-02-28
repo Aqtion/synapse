@@ -34,7 +34,7 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 w-full max-w-3xl mx-auto px-4 pt-4">
+    <header className="sticky top-0 z-40 w-full max-w-7xl mx-auto px-4 pt-4">
       <div className="flex flex-col overflow-hidden rounded-md border border-border/80 bg-background/50 shadow-sm backdrop-blur-md supports-backdrop-filter:bg-background/40">
         {/* Navbar bar */}
         <div className="flex h-14 w-full items-center justify-between px-4">
