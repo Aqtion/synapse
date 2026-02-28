@@ -410,6 +410,21 @@ function mimeFor(path: string): string {
   return MIME[ext] || 'application/octet-stream';
 }
 
+function corsHeaders(extra?: HeadersInit): Headers {
+  const headers = new Headers(extra);
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type');
+  return headers;
+}
+
+function json(body: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(body), {
+    status: init?.status ?? 200,
+    headers: corsHeaders(init?.headers),
+  });
+}
+
 function parseMultiFile(raw: string): Record<string, string> {
   const files: Record<string, string> = {};
   const blocks = raw.split(/^={3,}FILE:\s*/m);
@@ -492,6 +507,14 @@ export default {
     const sandboxId = idMatch[1];
     const sub = url.pathname.slice(`/s/${sandboxId}/`.length);
 
+    // ── CORS preflight for API routes ──
+    if (request.method === 'OPTIONS' && sub.startsWith('api/')) {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(),
+      });
+    }
+
     // ── Studio UI ──
     if (sub === '' || sub === 'index.html') {
       return new Response(studioHtml(sandboxId), {
@@ -533,10 +556,10 @@ export default {
           }
         } catch { /* best-effort */ }
 
-        return Response.json({ status: 'ready', files: Object.keys(STARTER_FILES) });
+        return json({ status: 'ready', files: Object.keys(STARTER_FILES) });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
-        return Response.json({ error: msg }, { status: 500 });
+        return json({ error: msg }, { status: 500 });
       }
     }
 
@@ -548,9 +571,9 @@ export default {
         const names = listing.files
           .filter((f) => f.type === 'file')
           .map((f) => f.relativePath);
-        return Response.json({ files: names });
+        return json({ files: names });
       } catch {
-        return Response.json({ files: [] });
+        return json({ files: [] });
       }
     }
 
@@ -614,7 +637,7 @@ export default {
         }
 
         if (Object.keys(changedFiles).length === 0) {
-          return Response.json(
+          return json(
             { error: 'AI returned an unparseable response. Try rephrasing your prompt.' },
             { status: 422 }
           );
@@ -636,10 +659,10 @@ export default {
           .filter((f) => f.type === 'file')
           .map((f) => f.relativePath);
 
-        return Response.json({ success: true, written, deleted, files: allFiles });
+        return json({ success: true, written, deleted, files: allFiles });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
-        return Response.json({ error: msg }, { status: 500 });
+        return json({ error: msg }, { status: 500 });
       }
     }
 
