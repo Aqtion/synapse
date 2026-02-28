@@ -68,7 +68,7 @@ export default function CreateProjectPage() {
   const canSubmit = name.trim().length > 0 && !!parsed && !isCreating;
 
   return (
-    <div className="px-6 py-12">
+    <div className="mx-auto min-w-2xl px-6 py-12">
       <h1 className="text-2xl font-semibold mb-6">Create project</h1>
 
       {isCreating ? (

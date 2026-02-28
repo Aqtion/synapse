@@ -12,9 +12,16 @@ import {
   Pencil,
   EyeOff,
   Trash2,
+  Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
@@ -55,75 +62,115 @@ type SandboxCardProps = {
   onDelete?: (e: React.MouseEvent, id: string) => void;
 };
 
-function SandboxCardMenuContent({
+type SandboxMenuItem =
+  | {
+      type: "item";
+      id: string;
+      icon: React.ComponentType<{ className?: string }>;
+      label: string;
+      onSelect: () => void;
+      disabled?: boolean;
+      loading?: boolean;
+      destructive?: boolean;
+      closeOnSelect?: boolean;
+    }
+  | { type: "separator" };
+
+function buildSandboxMenuItems({
   sandbox,
-  onOpen,
   onRename,
-  onHide,
-  onDelete,
+  handleHide,
+  handleDelete,
+  onShowInfo,
   onClose,
+  handleCreatePR,
+  prLoading,
+  prResult,
 }: {
   sandbox: SandboxEntry;
-  onOpen: (sandbox: SandboxEntry) => void;
   onRename?: (sandbox: SandboxEntry) => void;
-  onHide?: (e: React.MouseEvent, id: string) => void;
-  onDelete?: (e: React.MouseEvent, id: string) => void;
+  handleHide: (e: React.MouseEvent, id: string) => void;
+  handleDelete: (e: React.MouseEvent, id: string) => void;
+  onShowInfo: () => void;
   onClose?: () => void;
-}) {
+  handleCreatePR: (e: React.MouseEvent) => void;
+  prLoading: boolean;
+  prResult: string | null;
+}): SandboxMenuItem[] {
   const openInNewTab = () => {
     if (typeof window !== "undefined") {
       window.open(`${window.location.origin}/s/${sandbox.id}`, "_blank");
     }
     onClose?.();
   };
+  const noop = { stopPropagation: () => {} } as React.MouseEvent;
 
-  return (
-    <>
-      <DropdownMenuItem
-        onSelect={(e) => {
-          e.preventDefault();
-          openInNewTab();
-        }}
-      >
-        <ExternalLink className="size-4" />
-        Open sandbox
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onSelect={(e) => {
-          e.preventDefault();
-          onRename?.(sandbox);
-          onClose?.();
-        }}
-      >
-        <Pencil className="size-4" />
-        Rename sandbox
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem
-        variant="destructive"
-        className="text-destructive focus:text-destructive"
-        onSelect={(e) => {
-          e.preventDefault();
-          onHide?.({ stopPropagation: () => {} } as React.MouseEvent, sandbox.id);
-          onClose?.();
-        }}
-      >
-        <EyeOff className="size-4" />
-        Hide sandbox
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        variant="destructive"
-        onSelect={(e) => {
-          e.preventDefault();
-          onDelete?.({ stopPropagation: () => {} } as React.MouseEvent, sandbox.id);
-          onClose?.();
-        }}
-      >
-        <Trash2 className="size-4" />
-        Delete sandbox
-      </DropdownMenuItem>
-    </>
-  );
+  return [
+    {
+      type: "item",
+      id: "info",
+      icon: Info,
+      label: "Sandbox info",
+      onSelect: () => {
+        onShowInfo();
+        onClose?.();
+      },
+      closeOnSelect: true,
+    },
+    {
+      type: "item",
+      id: "open",
+      icon: ExternalLink,
+      label: "Open sandbox",
+      onSelect: openInNewTab,
+      closeOnSelect: true,
+    },
+    {
+      type: "item",
+      id: "rename",
+      icon: Pencil,
+      label: "Rename sandbox",
+      onSelect: () => {
+        onRename?.(sandbox);
+        onClose?.();
+      },
+      closeOnSelect: true,
+    },
+    {
+      type: "item",
+      id: "createPr",
+      icon: GitPullRequest,
+      label: prResult ? "Update Pull Request" : "Create Pull Request",
+      onSelect: () => handleCreatePR(noop),
+      disabled: prLoading,
+      loading: prLoading,
+    },
+    { type: "separator" },
+    {
+      type: "item",
+      id: "hide",
+      icon: EyeOff,
+      label: "Hide sandbox",
+      onSelect: () => {
+        handleHide(noop, sandbox.id);
+        onClose?.();
+      },
+      destructive: true,
+      closeOnSelect: true,
+    },
+    {
+      type: "item",
+      id: "delete",
+      icon: Trash2,
+      label: "Delete sandbox",
+      onSelect: () => {
+        handleDelete(noop, sandbox.id);
+        onClose?.();
+      },
+      destructive: true,
+      closeOnSelect: true,
+    },
+  ];
 }
 
 export function SandboxCard({
@@ -140,6 +187,7 @@ export function SandboxCard({
     sandbox.prUrl ?? null,
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const handleHide = onHide ?? onRemove;
   const handleDelete = onDelete ?? onRemove;
@@ -157,16 +205,30 @@ export function SandboxCard({
     }
   }
 
-  const menuContent = (
-    <SandboxCardMenuContent
-      sandbox={sandbox}
-      onOpen={onOpen}
-      onRename={onRename}
-      onHide={handleHide}
-      onDelete={handleDelete}
-      onClose={() => setMenuOpen(false)}
-    />
-  );
+  const menuItems = buildSandboxMenuItems({
+    sandbox,
+    onRename,
+    handleHide,
+    handleDelete,
+    onShowInfo: () => setInfoOpen(true),
+    onClose: () => setMenuOpen(false),
+    handleCreatePR,
+    prLoading,
+    prResult,
+  });
+
+  const infoRows: { label: string; value: string }[] = [
+    { label: "Name", value: sandbox.name },
+    { label: "ID", value: sandbox.id },
+    {
+      label: "Created",
+      value: new Date(sandbox.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }),
+    },
+    { label: "Last opened", value: timeAgo(sandbox.lastOpenedAt) },
+    { label: "PR number", value: sandbox.prNumber != null ? `#${sandbox.prNumber}` : "—" },
+    { label: "PR URL", value: sandbox.prUrl ?? "—" },
+    { label: "GitHub repo", value: sandbox.githubRepo ?? "—" },
+  ];
 
   return (
     <ContextMenu>
@@ -199,47 +261,49 @@ export function SandboxCard({
 
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Clock className="size-3.5 shrink-0" />
-                <span>{timeAgo(sandbox.lastOpenedAt)}</span>
+                <span className="translate-y-0.5">{timeAgo(sandbox.lastOpenedAt)}</span>
               </div>
             </div>
 
-            {/* PR link if exists */}
-            {prResult && (
-              <a
-                href={prResult}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-              >
-                <ExternalLink className="size-3" />
-                PR #{sandbox.prNumber ?? ""}
-              </a>
-            )}
-
-            {/* Actions: Make PR (bigger icon) right-aligned, then three dots */}
+            {/* Actions: PR link (if exists) or Create PR button, then three dots */}
             <div className="flex items-center justify-end gap-1 mt-auto pt-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-9 text-muted-foreground hover:text-foreground hover:bg-primary/10"
-                    onClick={handleCreatePR}
-                    disabled={prLoading}
-                    aria-label={prResult ? "Update Pull Request" : "Create Pull Request"}
-                  >
-                    {prLoading ? (
-                      <Loader2 className="size-5 animate-spin" />
-                    ) : (
-                      <GitPullRequest className="size-5" />
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {prResult ? "Update Pull Request" : "Create Pull Request"}
-                </TooltipContent>
-              </Tooltip>
+              {prResult ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <a
+                      href={prResult}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-primary/10"
+                      aria-label="Open Pull Request"
+                    >
+                      <ExternalLink className="size-5" />
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent>PR #{sandbox.prNumber ?? ""}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9 text-muted-foreground hover:text-foreground hover:bg-primary/10"
+                      onClick={handleCreatePR}
+                      disabled={prLoading}
+                      aria-label="Create Pull Request"
+                    >
+                      {prLoading ? (
+                        <Loader2 className="size-5 animate-spin" />
+                      ) : (
+                        <GitPullRequest className="size-5" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Create Pull Request</TooltipContent>
+                </Tooltip>
+              )}
               <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -253,14 +317,29 @@ export function SandboxCard({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                  <SandboxCardMenuContent
-                    sandbox={sandbox}
-                    onOpen={onOpen}
-                    onRename={onRename}
-                    onHide={handleHide}
-                    onDelete={handleDelete}
-                    onClose={() => setMenuOpen(false)}
-                  />
+                  {menuItems.map((item) =>
+                    item.type === "separator" ? (
+                      <DropdownMenuSeparator key="sep" />
+                    ) : (
+                      <DropdownMenuItem
+                        key={item.id}
+                        variant={item.destructive ? "destructive" : undefined}
+                        className={item.destructive ? "text-destructive focus:text-destructive" : undefined}
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          item.onSelect();
+                        }}
+                        disabled={item.disabled}
+                      >
+                        {item.loading ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <item.icon className="size-4" />
+                        )}
+                        {item.label}
+                      </DropdownMenuItem>
+                    )
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -268,37 +347,47 @@ export function SandboxCard({
         </Card>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48" onClick={(e) => e.stopPropagation()}>
-        <ContextMenuItem
-          onSelect={() => {
-            if (typeof window !== "undefined") {
-              window.open(`${window.location.origin}/s/${sandbox.id}`, "_blank");
-            }
-          }}
-        >
-          <ExternalLink className="size-4" />
-          Open sandbox
-        </ContextMenuItem>
-        <ContextMenuItem onSelect={() => onRename?.(sandbox)}>
-          <Pencil className="size-4" />
-          Rename sandbox
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          variant="destructive"
-          className="text-destructive focus:text-destructive"
-          onSelect={() => handleHide({ stopPropagation: () => {} } as React.MouseEvent, sandbox.id)}
-        >
-          <EyeOff className="size-4" />
-          Hide sandbox
-        </ContextMenuItem>
-        <ContextMenuItem
-          variant="destructive"
-          onSelect={() => handleDelete({ stopPropagation: () => {} } as React.MouseEvent, sandbox.id)}
-        >
-          <Trash2 className="size-4" />
-          Delete sandbox
-        </ContextMenuItem>
+        {menuItems.map((item) =>
+          item.type === "separator" ? (
+            <ContextMenuSeparator key="sep" />
+          ) : (
+            <ContextMenuItem
+              key={item.id}
+              variant={item.destructive ? "destructive" : undefined}
+              className={item.destructive ? "text-destructive focus:text-destructive" : undefined}
+              onSelect={item.onSelect}
+              disabled={item.disabled}
+            >
+              {item.loading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <item.icon className="size-4" />
+              )}
+              {item.label}
+            </ContextMenuItem>
+          )
+        )}
       </ContextMenuContent>
+      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sandbox info</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-3 text-left">
+            {infoRows.map(({ label, value }) => (
+              <div
+                key={label}
+                className="flex justify-between items-baseline gap-6"
+              >
+                <span className="text-muted-foreground shrink-0">{label}</span>
+                <span className="text-foreground text-right break-all min-w-0">
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </ContextMenu>
   );
 }

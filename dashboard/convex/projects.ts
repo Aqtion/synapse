@@ -49,7 +49,62 @@ export const listProjectsForUser = query({
       seen.add(p.id);
       return true;
     });
-    return deduped.sort((a, b) => b.createdAt - a.createdAt);
+    return deduped
+      .filter((p) => !p.hidden)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  },
+});
+
+export const updateProject = mutation({
+  args: {
+    projectId: v.string(),
+    name: v.optional(v.string()),
+    githubRepo: v.optional(v.union(v.string(), v.null())),
+    projectType: v.optional(v.union(v.string(), v.null())),
+    hidden: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Must be signed in");
+    const userId = (identity as { subject?: string }).subject;
+    if (!userId) throw new Error("Invalid identity");
+
+    const project = await ctx.db
+      .query("projects")
+      .filter((q) => q.eq(q.field("id"), args.projectId))
+      .first();
+    if (!project) throw new Error("Project not found");
+    if (project.userId !== userId) throw new Error("Only the project owner can update it");
+
+    const updates: Partial<Doc<"projects">> = {};
+    if (args.name !== undefined) updates.name = args.name.trim() || project.name;
+    if (args.githubRepo !== undefined) updates.githubRepo = args.githubRepo ?? undefined;
+    if (args.projectType !== undefined) updates.projectType = args.projectType ?? undefined;
+    if (args.hidden !== undefined) updates.hidden = args.hidden;
+    if (Object.keys(updates).length === 0) return null;
+
+    await ctx.db.patch(project._id, updates);
+    return null;
+  },
+});
+
+export const removeProject = mutation({
+  args: { projectId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Must be signed in");
+    const userId = (identity as { subject?: string }).subject;
+    if (!userId) throw new Error("Invalid identity");
+
+    const project = await ctx.db
+      .query("projects")
+      .filter((q) => q.eq(q.field("id"), args.projectId))
+      .first();
+    if (!project) throw new Error("Project not found");
+    if (project.userId !== userId) throw new Error("Only the project owner can delete it");
+
+    await ctx.db.delete(project._id);
+    return null;
   },
 });
 

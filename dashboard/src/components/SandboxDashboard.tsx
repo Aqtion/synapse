@@ -41,7 +41,7 @@ export function SandboxDashboard({ projectId }: SandboxDashboardProps) {
 
   return (
     <>
-      <div className="mx-auto max-w-[860px] px-6 py-12">
+      <div className="px-6 py-12">
         <SandboxList
           projectId={projectId}
           onOpenSandbox={handleOpenSandbox}

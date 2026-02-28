@@ -16,6 +16,7 @@ export default defineSchema({
     githubRepo: v.optional(v.string()),
     projectType: v.optional(v.string()),
     createdAt: v.number(),
+    hidden: v.optional(v.boolean()),
   }).index("by_userId", ["userId"]),
   projectMembers: defineTable({
     projectId: v.string(),

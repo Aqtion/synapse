@@ -1,19 +1,17 @@
 "use client";
 
-import { useState } from "react";
 import { useParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { Button } from "@/components/ui/button";
-import { Plus, Share2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import Link from "next/link";
-import { ShareProjectDialog } from "@/components/ShareProjectDialog";
+import { ProjectCard } from "@/components/ProjectCard";
 
 export default function UserProjectsPage() {
   const params = useParams();
   const user_id = params?.user_id as string | undefined;
   const projects = useQuery(api.projects.listProjectsForUser);
-  const [shareProject, setShareProject] = useState<{ id: string; name: string } | null>(null);
 
   if (projects === undefined) {
     return (
@@ -52,47 +50,13 @@ export default function UserProjectsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((project) => (
-            <div
+            <ProjectCard
               key={project.id}
-              className="group relative rounded-lg border bg-card p-4 hover:border-primary/50 hover:shadow transition-colors"
-            >
-              <Link href={`/${user_id}/${project.id}`} className="block pr-8">
-                <h2 className="font-semibold truncate">{project.name}</h2>
-                {project.githubRepo && (
-                  <p className="text-sm text-muted-foreground truncate mt-1">
-                    {project.githubRepo}
-                  </p>
-                )}
-                {project.projectType && (
-                  <span className="inline-block mt-2 text-xs text-muted-foreground capitalize">
-                    {project.projectType}
-                  </span>
-                )}
-              </Link>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setShareProject({ id: project.id, name: project.name });
-                }}
-                aria-label="Share project"
-              >
-                <Share2 className="size-4" />
-              </Button>
-            </div>
+              project={project}
+              userId={user_id ?? ""}
+            />
           ))}
         </div>
-      )}
-
-      {shareProject && (
-        <ShareProjectDialog
-          open={!!shareProject}
-          onOpenChange={(open) => !open && setShareProject(null)}
-          projectId={shareProject.id}
-          projectName={shareProject.name}
-        />
       )}
     </div>
   );

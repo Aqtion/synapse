@@ -29,18 +29,20 @@ export function LandingHeader() {
   const [signInOpen, setSignInOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-border/80 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/60">
+    <header className="sticky top-5 z-40 w-full max-w-6xl mx-auto bg-background/15 backdrop-blur supports-backdrop-filter:bg-background/80">
       <div className="flex h-14 w-full max-w-7xl mx-auto items-center justify-between px-4">
         <Link
           href="/"
-          className="flex items-center gap-2 rounded-md py-2 text-foreground hover:opacity-90"
+          className="flex items-center rounded-md py-2 text-foreground hover:opacity-90"
           aria-label="Synapse home"
         >
-          <SynapseLogo className="size-8 shrink-0 text-foreground" />
+          <SynapseLogo className="size-25 shrink-0 text-foreground" />
+          <span className="text-2xl font-normal -translate-x-3">Synapse</span>
         </Link>
         <Button
           variant="default"
-          size="sm"
+          size="lg"
+          className="text-lg"
           onClick={() => setSignInOpen(true)}
         >
           Sign in

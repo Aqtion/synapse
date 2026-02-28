@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, Trash2 } from "lucide-react";
 
 export type TesterRow = { name: string; email: string };
@@ -70,8 +71,9 @@ export function CreateSandboxDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="mt-4 space-y-3">
-              {testers.map((row, index) => (
+        <ScrollArea className="mt-4 max-h-[50vh]">
+          <div className="space-y-3 pr-3">
+            {testers.map((row, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <Input
                     placeholder="Name"
@@ -103,7 +105,7 @@ export function CreateSandboxDialog({
               <button
                 type="button"
                 onClick={addRows}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-md border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-md border border-dashed border-muted-foreground/40 text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
               >
                 <Plus className="size-4" />
                 <span>Add</span>
@@ -114,13 +116,14 @@ export function CreateSandboxDialog({
                   value={addCount}
                   onChange={(e) => setAddCount(parseInt(e.target.value, 10) || 1)}
                   onClick={(e) => e.stopPropagation()}
-                  className="w-12 h-7 text-center text-sm"
+                  className="w-12 h-7 text-center text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                 />
                 <span>more testers</span>
               </button>
-        </div>
+          </div>
+        </ScrollArea>
         <DialogFooter className="gap-2 sm:gap-0 mt-6">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button className="mr-2" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button onClick={handleCreate} disabled={!canSubmit}>Invite</Button>
         </DialogFooter>
       </DialogContent>
