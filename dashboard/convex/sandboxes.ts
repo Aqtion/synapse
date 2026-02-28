@@ -52,6 +52,25 @@ export const insertTesterSandbox = internalMutation({
   },
 });
 
+export const updateSandboxTester = internalMutation({
+  args: {
+    id: v.string(),
+    testerEmail: v.string(),
+    testerName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("sandboxes")
+      .withIndex("by_sandbox_id", (q) => q.eq("id", args.id))
+      .unique();
+    if (!row) throw new Error(`Sandbox ${args.id} not found`);
+    await ctx.db.patch(row._id, {
+      testerEmail: args.testerEmail,
+      testerName: args.testerName,
+    });
+  },
+});
+
 export const inviteTesters = action({
   args: {
     testers: v.array(
@@ -60,6 +79,7 @@ export const inviteTesters = action({
         email: v.string(),
       }),
     ),
+    sandboxId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -72,16 +92,29 @@ export const inviteTesters = action({
       if (!rawEmail) continue;
 
       const sandboxName = rawName || rawEmail;
-      const id = makeId(sandboxName);
-      const sandboxUrl = `${siteUrl}/s/${id}`;
 
-      await ctx.runMutation(internal.sandboxes.insertTesterSandbox, {
-        id,
-        name: sandboxName,
-        testerEmail: rawEmail,
-        testerName: rawName || undefined,
-        now,
-      });
+      let id: string;
+      if (args.sandboxId) {
+        // Attach tester to the existing sandbox (e.g. created by import flow)
+        id = args.sandboxId;
+        await ctx.runMutation(internal.sandboxes.updateSandboxTester, {
+          id,
+          testerEmail: rawEmail,
+          testerName: rawName || undefined,
+        });
+      } else {
+        // Normal invite: create a fresh sandbox for this tester
+        id = makeId(sandboxName);
+        await ctx.runMutation(internal.sandboxes.insertTesterSandbox, {
+          id,
+          name: sandboxName,
+          testerEmail: rawEmail,
+          testerName: rawName || undefined,
+          now,
+        });
+      }
+
+      const sandboxUrl = `${siteUrl}/s/${id}`;
 
       const displayName = rawName || "there";
       await fetch("https://api.resend.com/emails", {
