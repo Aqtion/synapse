@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useAction, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { SandboxVoice } from "@/components/SandboxVoice";
+import { useSandboxPostHogOnLoad } from "@/components/SandboxPostHogTelemetry";
 import { Loader2 } from "lucide-react";
 
 const WORKER_BASE_URL =
@@ -16,6 +17,7 @@ export default function SandboxPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
   const workerBase = WORKER_BASE_URL ?? "";
+  const onSandboxFrameLoad = useSandboxPostHogOnLoad(id ?? "");
 
   const sandbox = useQuery(
     api.sandboxes.getSandboxForCurrentUser,
@@ -25,6 +27,25 @@ export default function SandboxPage() {
 
   const [workerReady, setWorkerReady] = useState(false);
   const [workerError, setWorkerError] = useState<string | null>(null);
+  const [phDebug, setPhDebug] = useState<
+    "idle" | "no_key" | "script_loaded" | "inited"
+  >("idle");
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !id) return;
+    const key = (process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "").trim();
+    if (!key) {
+      setPhDebug("no_key");
+      return;
+    }
+    const onMessage = (ev: MessageEvent) => {
+      if (ev.data?.type === "SANDBOX_POSTHOG_SCRIPT_LOADED")
+        setPhDebug("script_loaded");
+      if (ev.data?.type === "POSTHOG_IFRAME_INITED") setPhDebug("inited");
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [id]);
 
   useEffect(() => {
     if (!id || !sandbox || workerReady || workerError) return;
@@ -96,7 +117,7 @@ export default function SandboxPage() {
     );
   }
 
-  const iframeSrc = `${workerBase.replace(/\/$/, "")}/s/${id}/`;
+  const iframeSrc = `${workerBase.replace(/\/$/, "")}/s/${id}/?_ph=1`;
 
   return (
     <>
@@ -105,8 +126,18 @@ export default function SandboxPage() {
         src={iframeSrc}
         className="w-full h-screen border-0"
         title={`Sandbox ${id}`}
+        onLoad={onSandboxFrameLoad}
       />
       <SandboxVoice sandboxId={id} />
+      {process.env.NODE_ENV === "development" && (
+        <div
+          className="fixed bottom-2 left-2 z-50 rounded border bg-background/95 px-2 py-1 text-xs text-muted-foreground shadow"
+          aria-live="polite"
+        >
+          PostHog: {phDebug}
+          {phDebug === "no_key" && " (set NEXT_PUBLIC_POSTHOG_KEY)"}
+        </div>
+      )}
     </>
   );
 }

@@ -16,3 +16,5 @@ After editing files in `starter/` (e.g. `studio.html`), regenerate the bundle:
 
     node scripts/generate-starter-files.mjs
 
+Deploy: `npx wrangler deploy`. If you get **Unauthorized**, the worker may belong to a different Cloudflare account; use the account in `wrangler.jsonc` (`account_id`) or run `npx wrangler deploy --account-id <id>` for the account that owns `my-sandbox.*.workers.dev`.
+
