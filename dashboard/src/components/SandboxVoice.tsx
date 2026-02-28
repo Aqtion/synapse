@@ -1,8 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
-import { runPrompt } from "@/lib/workerClient";
 import { cn } from "@/lib/utils";
 
 const SAMPLE_RATE = 16000;
@@ -19,6 +18,8 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
   const [status, setStatus] = useState<string | null>(null);
   const [transcript, setTranscript] = useState({ committed: "", partial: "" });
   const [isProcessing, setIsProcessing] = useState(false);
+  const [studioReady, setStudioReady] = useState(false);
+  const [lastStudioMessage, setLastStudioMessage] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -26,6 +27,107 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const committedRef = useRef("");
+  const latestTextRef = useRef("");
+  const submitAckedRef = useRef(false);
+  const pendingSubmitIdRef = useRef<string | null>(null);
+
+  const makeRequestId = useCallback(() => {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+  }, []);
+
+  const postToStudio = useCallback(
+    (text: string, submit: boolean, requestId?: string) => {
+      const frame = document.querySelector("iframe") as HTMLIFrameElement | null;
+      const win = frame?.contentWindow ?? null;
+      if (!win) return false;
+
+      // If we haven't seen a ready signal yet, we still try; the studio
+      // will no-op if it doesn't have the bridge. Dashboard has a fallback.
+      try {
+        win.postMessage(
+          {
+            type: "synapse:voice",
+            sandboxId,
+            text,
+            submit,
+            requestId: requestId ?? null,
+          },
+          "*"
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [sandboxId]
+  );
+
+  const speak = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    try {
+      setIsProcessing(true);
+      setStatus("Speaking…");
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: trimmed }),
+      });
+      if (!res.ok) {
+        setStatus("TTS failed.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => URL.revokeObjectURL(url);
+      await audio.play();
+      setStatus(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setStatus(`TTS error: ${msg}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    function onMessage(evt: MessageEvent) {
+      const data = evt.data as unknown;
+      if (!data || typeof data !== "object") return;
+      const d = data as {
+        type?: string;
+        sandboxId?: string;
+        text?: string;
+        kind?: string;
+        requestId?: string | null;
+        submit?: boolean;
+      };
+      if (d.sandboxId && d.sandboxId !== sandboxId) return;
+      if (d.type === "synapse:studio_ready") {
+        setStudioReady(true);
+      } else if (d.type === "synapse:studio_message" && typeof d.text === "string") {
+        setLastStudioMessage(d.text);
+      } else if (d.type === "synapse:voice_ack" && d.submit) {
+        if (d.requestId && pendingSubmitIdRef.current === d.requestId) {
+          submitAckedRef.current = true;
+          setStatus("Prompt submitted.");
+        }
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [sandboxId]);
+
+  // Auto‑TTS the latest assistant/system message from the studio.
+  useEffect(() => {
+    if (!lastStudioMessage) return;
+    speak(lastStudioMessage);
+  }, [lastStudioMessage, speak]);
 
   const stopListening = useCallback(() => {
     workletRef.current?.disconnect();
@@ -77,6 +179,7 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
     wsRef.current = ws;
 
     committedRef.current = "";
+    latestTextRef.current = "";
 
     ws.onopen = () => {
       setStatus("Listening…");
@@ -86,11 +189,16 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
       try {
         const msg = JSON.parse(evt.data as string) as { type?: string; text?: string };
         if (msg.type === "partial_transcript") {
-          setTranscript((prev) => ({ ...prev, partial: msg.text ?? "" }));
+          const partial = msg.text ?? "";
+          latestTextRef.current = (committedRef.current + (partial ? ` ${partial}` : "")).trim();
+          setTranscript((prev) => ({ ...prev, partial }));
+          postToStudio(latestTextRef.current, false);
         } else if (msg.type === "committed_transcript") {
           const text = msg.text ?? "";
           committedRef.current += (committedRef.current ? " " : "") + text;
+          latestTextRef.current = committedRef.current.trim();
           setTranscript((prev) => ({ committed: committedRef.current, partial: "" }));
+          postToStudio(latestTextRef.current, false);
         } else if (msg.type === "error") {
           setStatus(`Error: ${(msg as { message?: string }).message ?? "Unknown"}`);
           stopListening();
@@ -118,78 +226,36 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
     worklet.connect(ctx.destination);
     setIsListening(true);
     setTranscript({ committed: "", partial: "" });
-  }, [stopListening]);
+  }, [postToStudio, stopListening]);
 
   const handleMicClick = useCallback(async () => {
     if (isProcessing) return;
 
     if (isListening) {
       stopListening();
-      const finalTranscript = committedRef.current.trim();
+      const finalTranscript = latestTextRef.current.trim();
       if (!finalTranscript) {
         setStatus("No speech detected.");
         return;
       }
+      submitAckedRef.current = false;
+      const requestId = makeRequestId();
+      pendingSubmitIdRef.current = requestId;
 
-      setIsProcessing(true);
-      setStatus("Asking sandbox…");
+      setStatus("Submitting…");
+      postToStudio(finalTranscript, true, requestId);
 
-      try {
-        const result = await runPrompt({
-          sandboxId,
-          prompt: finalTranscript,
-        });
-
-        let message: string;
-        if (result.success) {
-          const parts = [...(result.written ?? []), ...(result.deleted ?? []).map((f) => `${f} (deleted)`)];
-          message = parts.length
-            ? `Updated ${parts.length} file(s): ${parts.join(", ")}`
-            : "No files changed.";
-        } else {
-          message = `Error: ${result.error ?? "Unknown error"}`;
+      // Clear status after a short delay if we never get an ack (e.g. iframe runs old worker build).
+      setTimeout(() => {
+        if (!submitAckedRef.current) {
+          setStatus(null);
         }
-
-        setStatus("Speaking…");
-        const ttsRes = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: message }),
-        });
-        if (!ttsRes.ok) {
-          setStatus("TTS failed.");
-          return;
-        }
-        const blob = await ttsRes.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio.onended = () => URL.revokeObjectURL(url);
-        await audio.play();
-        setStatus(null);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setStatus(`Error: ${message}`);
-        try {
-          const ttsRes = await fetch("/api/tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: `Error: ${message}` }),
-          });
-          if (ttsRes.ok) {
-            const blob = await ttsRes.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            audio.onended = () => URL.revokeObjectURL(url);
-            await audio.play();
-          }
-        } catch (_) {}
-      } finally {
-        setIsProcessing(false);
-      }
+        pendingSubmitIdRef.current = null;
+      }, 2500);
     } else {
       await startListening();
     }
-  }, [isListening, isProcessing, sandboxId, startListening, stopListening]);
+  }, [isListening, isProcessing, makeRequestId, postToStudio, startListening, stopListening, studioReady]);
 
   const displayTranscript = transcript.committed + (transcript.partial ? ` ${transcript.partial}` : "");
 

@@ -1112,6 +1112,45 @@ function studioHtml(sandboxId: string): string {
       el.style.height = 'auto';
       el.style.height = Math.min(el.scrollHeight, 120) + 'px';
     }
+
+    // Let the parent dashboard know the studio UI is ready.
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'synapse:studio_ready', sandboxId: SANDBOX_ID }, '*');
+      }
+    } catch { /* ignore */ }
+
+    // Bridge for dashboard voice input (STT).
+    // Parent posts `{ type: 'synapse:voice', text, submit, requestId? }`.
+    window.addEventListener('message', (evt) => {
+      const data = evt.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type !== 'synapse:voice') return;
+
+      if (typeof data.text === 'string') {
+        els.promptInput.value = data.text;
+        autoResize(els.promptInput);
+        els.promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      if (data.submit) {
+        sendPrompt();
+      }
+
+      // Ack back to parent so it knows the message was applied.
+      try {
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            {
+              type: 'synapse:voice_ack',
+              sandboxId: SANDBOX_ID,
+              requestId: data.requestId || null,
+              submit: !!data.submit,
+            },
+            '*'
+          );
+        }
+      } catch { /* ignore */ }
+    });
     function handleKey(e) {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
     }
@@ -1135,6 +1174,16 @@ function studioHtml(sandboxId: string): string {
       }
       els.messages.appendChild(div);
       els.messages.scrollTop = els.messages.scrollHeight;
+
+      // Notify parent dashboard so it can optionally TTS assistant/system responses.
+      try {
+        if (window.parent && window.parent !== window && type !== 'user') {
+          window.parent.postMessage(
+            { type: 'synapse:studio_message', sandboxId: SANDBOX_ID, kind: type, text },
+            '*'
+          );
+        }
+      } catch { /* ignore */ }
     }
 
     function setStatus(state, text) {
@@ -1190,6 +1239,11 @@ function studioHtml(sandboxId: string): string {
         navigatePreview('preview/');
         setStatus('active', 'Sandbox ready');
         hideLoading();
+        try {
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: 'synapse:studio_ready', sandboxId: SANDBOX_ID }, '*');
+          }
+        } catch { /* ignore */ }
       } catch (err) {
         if (attempt < MAX) {
           await new Promise(r => setTimeout(r, 3000 * attempt));
