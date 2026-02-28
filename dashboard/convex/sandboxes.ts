@@ -133,6 +133,218 @@ export const inviteTesters = action({
   },
 });
 
+// ─────────────────────────────────────────────────────────────
+// GitHub import: fetch repo source, transform JSX, upload to sandbox
+// ─────────────────────────────────────────────────────────────
+
+function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
+  const m = url.trim().replace(/\.git$/, '').match(/github\.com\/([^/]+)\/([^/]+)/);
+  if (!m) return null;
+  return { owner: m[1], repo: m[2] };
+}
+
+async function fetchGitHubFile(owner: string, repo: string, path: string, token?: string): Promise<string | null> {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github.raw+json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/${path}`, { headers });
+  if (!res.ok) return null;
+  return res.text();
+}
+
+async function fetchGitHubTree(owner: string, repo: string, token?: string): Promise<{ path: string; type: string }[]> {
+  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`, { headers });
+  if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
+  const data = await res.json() as { tree: { path: string; type: string }[] };
+  return data.tree;
+}
+
+function findFile(fileMap: Record<string, string>, relativePath: string): string | null {
+  const candidates = [relativePath, `${relativePath}.tsx`, `${relativePath}.ts`, `${relativePath}.jsx`, `${relativePath}.js`];
+  for (const c of candidates) {
+    for (const [key, content] of Object.entries(fileMap)) {
+      if (key === c || key.endsWith(`/${c}`)) return content;
+    }
+  }
+  return null;
+}
+
+function inlineLocalImports(code: string, fileMap: Record<string, string>, visited = new Set<string>()): string {
+  return code.replace(
+    /^import\s+[\s\S]*?\s+from\s+['"]\.\/([^'"]+)['"]/gm,
+    (match, relativePath) => {
+      if (visited.has(relativePath)) return '';
+      visited.add(relativePath);
+      const content = findFile(fileMap, relativePath);
+      if (!content) return match;
+      // Recursively inline any local imports in the inlined file
+      return inlineLocalImports(content, fileMap, visited);
+    }
+  );
+}
+
+function flattenForBrowser(code: string): string {
+  // Strip all remaining import statements (package imports, CSS imports, etc.)
+  let result = code.replace(/^import\s+.*$/gm, '');
+  // Strip export default
+  result = result.replace(/^export\s+default\s+/gm, '');
+  // Strip export keyword from named exports
+  result = result.replace(/^export\s+(?=(?:function|const|let|var|class)\s)/gm, '');
+  return result;
+}
+
+function generateIndexHtml(
+  title: string,
+  allSources: Record<string, string>,
+  cssContent: string,
+  deps: Record<string, string>,
+  entryFile: string,
+): string {
+  const reactVer = (deps['react'] ?? '18').replace(/[^0-9.]/g, '');
+
+  let entryCode = allSources[entryFile] ?? '';
+  entryCode = inlineLocalImports(entryCode, allSources);
+  entryCode = flattenForBrowser(entryCode);
+
+  const hooksPreamble = `const { useState, useEffect, useRef, useCallback, useMemo, useContext, useReducer, createContext, createElement, Fragment, StrictMode } = React;`;
+
+  // Escape the source so it can live safely inside a JS template literal
+  const escapedCode = (hooksPreamble + '\n\n' + entryCode)
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${title}</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="root"></div>
+  <div id="_err" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#1a1a2e;color:#ff6b6b;font-family:monospace;padding:32px;z-index:9999;overflow:auto;white-space:pre-wrap;font-size:13px;line-height:1.6;border-left:4px solid #ff6b6b"></div>
+  <script crossorigin src="https://unpkg.com/react@${reactVer}/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@${reactVer}/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    function showError(label, err) {
+      var el = document.getElementById('_err');
+      el.style.display = 'block';
+      el.textContent = label + '\\n\\n' + (err && err.stack ? err.stack : String(err));
+    }
+    window.addEventListener('unhandledrejection', function(e) {
+      showError('Unhandled Promise Rejection', e.reason);
+    });
+    try {
+      var src = \`${escapedCode}\`;
+      var compiled;
+      try {
+        compiled = Babel.transform(src, { presets: ['react', 'typescript'], filename: 'app.tsx' }).code;
+      } catch(e) {
+        showError('Babel Transform Error', e);
+        throw e;
+      }
+      try {
+        // eslint-disable-next-line no-eval
+        (0, eval)(compiled);
+      } catch(e) {
+        showError('Runtime Error', e);
+        throw e;
+      }
+    } catch(e) {
+      // already shown
+    }
+  </script>
+</body>
+</html>`;
+}
+
+const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx']);
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out']);
+
+export const importFromGitHub = action({
+  args: {
+    sandboxId: v.string(),
+    repoUrl: v.string(),
+    githubToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const parsed = parseGitHubUrl(args.repoUrl);
+    if (!parsed) throw new Error('Invalid GitHub URL');
+    const { owner, repo } = parsed;
+    const token = args.githubToken ?? process.env.GITHUB_TOKEN;
+
+    // Fetch full file tree
+    const tree = await fetchGitHubTree(owner, repo, token);
+    const sourceFiles = tree.filter(({ path, type }) => {
+      if (type !== 'blob') return false;
+      const parts = path.split('/');
+      if (parts.some((p) => SKIP_DIRS.has(p))) return false;
+      const ext = path.slice(path.lastIndexOf('.'));
+      return SOURCE_EXTS.has(ext) || path.endsWith('.css') || path.endsWith('.html');
+    });
+
+    // Fetch package.json for dependency versions
+    let deps: Record<string, string> = {};
+    const pkgJson = await fetchGitHubFile(owner, repo, 'package.json', token);
+    if (pkgJson) {
+      try {
+        const pkg = JSON.parse(pkgJson) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+        deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      } catch { /* ignore parse errors */ }
+    }
+
+    // Fetch all source files
+    const allSources: Record<string, string> = {};
+    let cssContent = '';
+    await Promise.all(
+      sourceFiles.map(async ({ path }) => {
+        const content = await fetchGitHubFile(owner, repo, path, token);
+        if (content === null) return;
+        if (path.endsWith('.css')) {
+          cssContent += content + '\n';
+        } else {
+          allSources[path] = content;
+        }
+      })
+    );
+
+    // Detect entry file
+    const entryFile = ['src/main.tsx', 'src/main.jsx', 'src/index.tsx', 'src/index.jsx', 'src/App.tsx']
+      .find((e) => allSources[e]) ?? Object.keys(allSources)[0];
+
+    // Build a single-page app with Babel standalone for JSX
+    const generatedHtml = generateIndexHtml(repo, allSources, cssContent, deps, entryFile);
+
+    console.log(`[importFromGitHub] entryFile: ${entryFile}`);
+    console.log(`[importFromGitHub] allSources keys: ${Object.keys(allSources).join(', ')}`);
+    console.log(`[importFromGitHub] deps: ${JSON.stringify(deps)}`);
+    console.log(`[importFromGitHub] generated index.html (first 3000 chars):\n${generatedHtml.slice(0, 3000)}`);
+
+    const outputFiles: Record<string, string> = { 'index.html': generatedHtml };
+    if (cssContent) outputFiles['styles.css'] = cssContent;
+
+    // Upload to sandbox via worker
+    const workerBase = process.env.WORKER_BASE_URL;
+    if (!workerBase) throw new Error('WORKER_BASE_URL not set in Convex env');
+    const uploadUrl = `${workerBase.replace(/\/$/, '')}/s/${args.sandboxId}/api/upload`;
+    const uploadRes = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ files: outputFiles }),
+    });
+    if (!uploadRes.ok) {
+      const err = await uploadRes.text();
+      throw new Error(`Upload failed (${uploadRes.status}): ${err || uploadRes.statusText}. Ensure WORKER_BASE_URL in Convex env points to your deployed worker (not localhost) and the worker is deployed with the latest code.`);
+    }
+
+    return { ok: true, files: Object.keys(outputFiles), htmlPreview: generatedHtml.slice(0, 2000) };
+  },
+});
+
 export const listSandboxes = query({
   args: {},
   handler: async (ctx) => {

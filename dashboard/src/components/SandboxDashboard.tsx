@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CreateSandboxDialog, type TesterRow } from "./CreateSandboxDialog";
@@ -17,6 +17,8 @@ export function SandboxDashboard() {
 
   const sandboxes = useQuery(api.sandboxes.listSandboxes);
   const inviteTestersAction = useAction(api.sandboxes.inviteTesters);
+  const importFromGitHubAction = useAction(api.sandboxes.importFromGitHub);
+  const createSandboxMutation = useMutation(api.sandboxes.createSandbox);
 
   const workerBase =
     typeof window !== "undefined"
@@ -32,6 +34,35 @@ export function SandboxDashboard() {
       setModalOpen(false);
     } catch (err) {
       console.error("Invite testers failed:", err);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleImportRepo({
+    repoUrl,
+    testerName,
+    testerEmail,
+  }: {
+    repoUrl: string;
+    testerName: string;
+    testerEmail: string;
+  }) {
+    setCreating(true);
+    try {
+      const repoName = repoUrl.split("/").pop() ?? "imported";
+      const sandboxId = await createSandboxMutation({ name: repoName });
+      await importFromGitHubAction({ sandboxId, repoUrl });
+      if (testerEmail) {
+        await inviteTestersAction({
+          testers: [{ name: testerName, email: testerEmail }],
+        });
+      }
+      setModalOpen(false);
+      router.push(`/s/${sandboxId}`);
+    } catch (err) {
+      console.error("GitHub import failed:", err);
+    } finally {
       setCreating(false);
     }
   }
@@ -71,6 +102,7 @@ export function SandboxDashboard() {
         open={modalOpen}
         onOpenChange={(open) => !creating && setModalOpen(open)}
         onCreate={handleCreate}
+        onImportRepo={handleImportRepo}
       />
     </>
   );

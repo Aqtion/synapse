@@ -221,10 +221,12 @@ export default {
 
     // ── API: init ──
     if (sub === 'api/init' && request.method === 'POST') {
+      const step = { name: 'mkdir' };
       try {
         const sandbox = getSandbox(env.Sandbox, sandboxId);
         await sandbox.mkdir(APP_DIR, { recursive: true });
 
+        step.name = 'listFiles';
         let existingFiles: string[] = [];
         try {
           const listing = await sandbox.listFiles(APP_DIR, { recursive: true });
@@ -235,6 +237,7 @@ export default {
 
         if (existingFiles.length === 0) {
           for (const [name, content] of Object.entries(STARTER_FILES)) {
+            step.name = `writeFile:${name}`;
             await sandbox.writeFile(`${APP_DIR}/${name}`, content);
           }
           existingFiles = Object.keys(STARTER_FILES);
@@ -242,6 +245,7 @@ export default {
 
         // Start HTTP server in the background (non-blocking).
         // Our /preview/* route serves files directly so this isn't critical.
+        step.name = 'startServer';
         try {
           const exposedPorts = await sandbox.getExposedPorts(hostname);
           if (!exposedPorts.some((p) => p.port === 8080)) {
@@ -252,7 +256,7 @@ export default {
         return json({ status: 'ready', files: existingFiles });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
-        return json({ error: msg }, { status: 500 });
+        return json({ error: `[step:${step.name}] ${msg}` }, { status: 500 });
       }
     }
 
@@ -317,14 +321,20 @@ export default {
           content: `CURRENT FILES:\n\n${currentSnapshot}\nUSER REQUEST: ${prompt}`,
         });
 
-        const aiResponse = await env.AI.run(
-          '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-          {
-            messages: messages as RoleScopedChatInput[],
-            max_tokens: 8192,
-            temperature: 0.3,
-          }
-        );
+        let aiResponse;
+        try {
+          aiResponse = await env.AI.run(
+            '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+            {
+              messages: messages as RoleScopedChatInput[],
+              max_tokens: 8192,
+              temperature: 0.3,
+            }
+          );
+        } catch (aiErr: unknown) {
+          const aiMsg = aiErr instanceof Error ? aiErr.message : String(aiErr);
+          return json({ error: `AI model error: ${aiMsg}` }, { status: 500 });
+        }
 
         let rawResponse = '';
         if (typeof aiResponse === 'string') {
@@ -368,8 +378,65 @@ export default {
 
         return json({ success: true, written, deleted, files: allFiles });
       } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : String(error);
+        const msg = error instanceof Error
+          ? `${error.constructor.name}: ${error.message}${error.stack ? '\n' + error.stack : ''}`
+          : String(error);
         return json({ error: msg }, { status: 500 });
+      }
+    }
+
+    // ── API: upload files (bulk write, replaces all existing files) ──
+    if (sub === 'api/upload' && request.method === 'POST') {
+      const step = { name: 'parse' };
+      try {
+        const { files } = (await request.json()) as { files: Record<string, string> };
+        if (!files || typeof files !== 'object') {
+          return json({ error: 'Expected { files: { [name]: content } }' }, { status: 400 });
+        }
+        const sandbox = getSandbox(env.Sandbox, sandboxId);
+
+        step.name = 'mkdir';
+        await sandbox.mkdir(APP_DIR, { recursive: true });
+
+        // Clear existing files (best-effort — skip on fresh sandbox)
+        step.name = 'listFiles';
+        try {
+          const listing = await sandbox.listFiles(APP_DIR, { recursive: true });
+          step.name = 'deleteFiles';
+          await Promise.all(
+            listing.files
+              .filter((f) => f.type === 'file')
+              .map((f) => sandbox.deleteFile(`${APP_DIR}/${f.relativePath}`).catch(() => {}))
+          );
+        } catch { /* directory may be empty on fresh sandbox */ }
+
+        // Write new files, creating subdirs as needed
+        step.name = 'writeFiles';
+        const fileNames = Object.keys(files);
+        const subdirs = [...new Set(
+          fileNames.map((n) => n.includes('/') ? `${APP_DIR}/${n.slice(0, n.lastIndexOf('/'))}` : null).filter(Boolean)
+        )] as string[];
+        for (const dir of subdirs) {
+          await sandbox.mkdir(dir, { recursive: true }).catch(() => {});
+        }
+        for (const [name, content] of Object.entries(files)) {
+          step.name = `writeFile:${name}`;
+          await sandbox.writeFile(`${APP_DIR}/${name}`, content);
+        }
+
+        // Start HTTP server if not already running (best-effort)
+        step.name = 'startServer';
+        try {
+          const exposedPorts = await sandbox.getExposedPorts(request.headers.get('host') ?? '');
+          if (!exposedPorts.some((p) => p.port === 8080)) {
+            await sandbox.startProcess('python3 -m http.server 8080', { cwd: APP_DIR });
+          }
+        } catch { /* non-critical */ }
+
+        return json({ ok: true, files: Object.keys(files) });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return json({ error: `[step:${step.name}] ${msg}` }, { status: 500 });
       }
     }
 
