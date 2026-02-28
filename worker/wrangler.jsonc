@@ -5,7 +5,6 @@
 {
 	"$schema": "../node_modules/wrangler/config-schema.json",
 	"name": "my-sandbox",
-	"account_id": "23e2f85495baf41bf22e61832a40d517",
 	"main": "src/index.ts",
 	"compatibility_date": "2025-05-06",
 	"compatibility_flags": [

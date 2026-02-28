@@ -87,19 +87,6 @@ Rules:
 
 const APP_DIR = '/workspace/app';
 const SANDBOX_ID_RE = /^\/s\/([a-z0-9][a-z0-9-]{0,28}[a-z0-9]?)\//;
-
-// PostHog: official stub (s.api_host = config) + listener. Parent sends POSTHOG_INIT via postMessage (no key in URL).
-// This script is injected into studio HTML before </head>. Marker: SANDBOX_POSTHOG_SCRIPT_LOADED
-// Stub from PostHog docs: init(i,s,a) with s = config (so use init(apiKey, config) with 2 args).
-const POSTHOG_LISTENER_SCRIPT =
-  '<script>\n' +
-  '!function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=(s&&s.api_host?s.api_host:"https://us.i.posthog.com").replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="init capture register register_once register_for_session unregister unregister_for_session getFeatureFlag getFeatureFlagPayload isFeatureEnabled reloadFeatureFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSessionId getSurveys getActiveMatchingSurveys renderSurvey canRenderSurvey getNextSurveyStep identify setPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags reset get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException loadToolbar get_property getSessionProperty createPersonProfile opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing clear_opt_in_out_capturing debug".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);\n' +
-  'if(window.parent!==window)window.parent.postMessage({type:"SANDBOX_POSTHOG_SCRIPT_LOADED"},"*");\n' +
-  'function stopRecording(){try{if(window.posthog&&window.posthog.stopSessionRecording)window.posthog.stopSessionRecording();var pf=document.getElementById("previewFrame");if(pf&&pf.contentWindow)pf.contentWindow.postMessage({type:"POSTHOG_STOP"},"*");}catch(e){}}\n' +
-  'window.addEventListener("message",function(ev){var d=ev.data;if(!d||!d.type)return;if(d.type==="POSTHOG_INIT"){var isPreview=!!d.isPreview;var cfg={api_host:d.apiHost||"https://us.i.posthog.com",person_profiles:"identified_only",session_recording:isPreview?{maskAllInputs:!0}:{disabled:!0},autocapture:!0,capture_rage_clicks:!0,capture_dead_clicks:!0};window.posthog.init(d.apiKey,cfg);window.posthog.register({sandboxId:d.sandboxId});window.posthog.capture("sandbox_session_started",{sandboxId:d.sandboxId});if(!isPreview){window.__POSTHOG_PREVIEW_CONFIG__={apiKey:d.apiKey,apiHost:d.apiHost||"https://us.i.posthog.com",sandboxId:d.sandboxId};try{var pf=document.getElementById("previewFrame");if(pf&&pf.contentWindow)pf.contentWindow.postMessage({type:"POSTHOG_INIT",apiKey:d.apiKey,apiHost:d.apiHost,sandboxId:d.sandboxId,isPreview:!0},"*");}catch(e){}if(window.parent!==window)window.parent.postMessage({type:"POSTHOG_IFRAME_INITED"},"*");}}else if(d.type==="POSTHOG_STOP"){stopRecording();}});\n' +
-  'window.addEventListener("pagehide",stopRecording);\n' +
-  'document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")stopRecording();});\n' +
-  '</script>';
 const SUPERMEMORY_API = 'https://api.supermemory.ai/v3';
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -254,7 +241,7 @@ export default {
     // ── Studio UI ──
     if (sub === '' || sub === 'index.html') {
       return new Response(studioHtml(sandboxId, env as unknown as Record<string, string | undefined>), {
-        headers: corsHeaders({ 'Content-Type': 'text/html; charset=utf-8' }),
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
     }
 
@@ -557,6 +544,5 @@ function studioHtml(sandboxId: string, env: Record<string, string | undefined>):
   const dashboardUrl = (env.DASHBOARD_URL ?? '').replace(/\/$/, '') || 'http://localhost:3000';
   return STUDIO_HTML
     .replaceAll('{{SANDBOX_ID}}', sandboxId)
-    .replaceAll('{{DASHBOARD_URL}}', dashboardUrl)
-    .replace('</head>', POSTHOG_LISTENER_SCRIPT + '\n</head>');
+    .replaceAll('{{DASHBOARD_URL}}', dashboardUrl);
 }
