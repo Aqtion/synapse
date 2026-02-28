@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAction, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
-import { SignInDialog } from "@/components/SignInDialog";
+// import { SignInDialog } from "@/components/SignInDialog";
 import { SandboxVoice } from "@/components/SandboxVoice";
 import { Loader2 } from "lucide-react";
 
@@ -18,7 +18,7 @@ export default function SandboxPage() {
   const id = params?.id as string | undefined;
   const workerBase = WORKER_BASE_URL ?? "";
 
-  const identity = useQuery(api.auth.getCurrentUser);
+  // const identity = useQuery(api.auth.getCurrentUser);
   const sandbox = useQuery(
     api.sandboxes.getSandboxForCurrentUser,
     id ? { sandboxId: id } : "skip",
@@ -67,30 +67,31 @@ export default function SandboxPage() {
     );
   }
 
-  // Session still loading
-  if (identity === undefined) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
-        <Loader2 className="size-8 animate-spin" aria-label="Loading" />
-      </div>
-    );
-  }
-
-  // Not signed in: block sandbox and show sign-in
-  if (identity === null) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-6">
-        <p className="text-muted-foreground text-center mb-4">
-          Sign in to access this sandbox.
-        </p>
-        <SignInDialog
-          open={true}
-          onOpenChange={() => {}}
-          callbackURL={`/s/${id}`}
-        />
-      </div>
-    );
-  }
+  // Session + sign-in gate temporarily disabled to allow sandboxes without auth
+  // // Session still loading
+  // if (identity === undefined) {
+  //   return (
+  //     <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
+  //       <Loader2 className="size-8 animate-spin" aria-label="Loading" />
+  //     </div>
+  //   );
+  // }
+  //
+  // // Not signed in: block sandbox and show sign-in
+  // if (identity === null) {
+  //   return (
+  //     <div className="min-h-screen flex flex-col items-center justify-center bg-background p-6">
+  //       <p className="text-muted-foreground text-center mb-4">
+  //         Sign in to access this sandbox.
+  //       </p>
+  //       <SignInDialog
+  //         open={true}
+  //         onOpenChange={() => {}}
+  //         callbackURL={`/s/${id}`}
+  //       />
+  //     </div>
+  //   );
+  // }
 
   // Signed in; check if this user is the assigned tester
   if (sandbox === undefined) {
