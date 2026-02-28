@@ -32,7 +32,27 @@ export const createSandbox = mutation({
   },
 });
 
-export const inviteTesters = mutation({
+export const insertTesterSandbox = internalMutation({
+  args: {
+    id: v.string(),
+    name: v.string(),
+    testerEmail: v.string(),
+    testerName: v.optional(v.string()),
+    now: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("sandboxes", {
+      id: args.id,
+      name: args.name,
+      testerEmail: args.testerEmail,
+      testerName: args.testerName,
+      createdAt: args.now,
+      lastOpenedAt: args.now,
+    });
+  },
+});
+
+export const inviteTesters = action({
   args: {
     testers: v.array(
       v.object({
@@ -43,43 +63,71 @@ export const inviteTesters = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const results: {
-      sandboxId: string;
-      email: string;
-      name: string;
-    }[] = [];
+    const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
+    const results: { sandboxId: string; email: string; name: string }[] = [];
 
     for (const tester of args.testers) {
       const rawName = tester.name.trim();
       const rawEmail = tester.email.trim().toLowerCase();
-
-      if (!rawEmail) {
-        continue;
-      }
+      if (!rawEmail) continue;
 
       const sandboxName = rawName || rawEmail;
       const id = makeId(sandboxName);
+      const sandboxUrl = `${siteUrl}/s/${id}`;
 
-      await ctx.db.insert("sandboxes", {
+      await ctx.runMutation(internal.sandboxes.insertTesterSandbox, {
         id,
         name: sandboxName,
         testerEmail: rawEmail,
         testerName: rawName || undefined,
-        createdAt: now,
-        lastOpenedAt: now,
+        now,
       });
 
-      // ! send beta invite email to rawEmail with sandbox link and password info
-      // The email should include:
-      // - Link: `${process.env.SITE_URL ?? "http://localhost:3000"}/s/${id}`
-      // - For new users: a generated password and instructions to sign in with email + password
-      // - For existing users: a note that their password has been previously set
-
-      results.push({
-        sandboxId: id,
-        email: rawEmail,
-        name: sandboxName,
+      const displayName = rawName || "there";
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "Synapse <onboarding@resend.dev>",
+          to: rawEmail,
+          subject: `You've been invited to a Synapse sandbox`,
+          html: `
+            <div
+              style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0b0d11;color:#e4e7ed;border-radius:12px">
+              <div style="margin-bottom:24px; margin-left: -20px">
+                  <img src="https://raw.githubusercontent.com/Aqtion/synapse/main/dashboard/public/synapse.png" width="120" height="36" alt="Synapse" style="display:block" />
+                  <span style="margin-left: -10px; font-weight:700;font-size:32px;vertical-align:top">Synapse</span>
+              </div>
+              <h1 style="font-size:22px;font-weight:600;margin:0 0 10px">Hey ${displayName}, you're invited!</h1>
+              <p style="color:#7a8194;font-size:14px;line-height:1.6;margin:0 0 8px">
+                  You've been given access to an alpha version of [insert app name] for user testing!
+              </p>
+              <p style="color:#7a8194;font-size:14px;line-height:1.6;margin:0 0 24px">
+                  Your <a style="color:#ffffff" href="${sandboxUrl}">sandbox</a> is ready. Sign up or sign in to start
+                  building.
+              </p>
+              <a href="${sandboxUrl}"
+                  style="display:inline-block;padding:12px 24px;background:linear-gradient(135deg,#cb7a6c,#af560e);color:#fff;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none">
+                  Open My Sandbox
+              </a>
+              <p style="color:#7a8194;font-size:12px;margin-top:24px">
+                  If you weren't expecting this invite, you can safely ignore this email.
+              </p>
+              <p style="color:#7a8194;font-size:12px;margin-top: -4px;">
+                  Setup your own sandbox <a style="color:#aaaaaa" href="https://synapse.dev/docs/getting-started/quickstart">here</a>.
+              </p>
+          </div>
+          `,
+        }),
+      }).then(async (res) => {
+        const body = await res.json();
+        console.log(`[Resend invite] ${rawEmail} →`, res.status, JSON.stringify(body));
       });
+
+      results.push({ sandboxId: id, email: rawEmail, name: sandboxName });
     }
 
     return results;

@@ -7,6 +7,20 @@ import { components } from "../_generated/api";
 import type { DataModel } from "../_generated/dataModel";
 import authConfig from "../auth.config";
 
+async function sendResendEmail(to: string, subject: string, html: string) {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ from: "Synapse <onboarding@resend.dev>", to, subject, html }),
+  });
+  const body = await res.json();
+  console.log("[Resend]", res.status, JSON.stringify(body));
+  if (!res.ok) throw new Error(`Resend error ${res.status}: ${JSON.stringify(body)}`);
+}
+
 // Better Auth Component
 export const authComponent = createClient<DataModel>(
   components.betterAuth,
@@ -63,9 +77,57 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
     baseURL: process.env.SITE_URL || "http://localhost:3000",
     secret: process.env.BETTER_AUTH_SECRET || "change-me-in-production",
     database: authComponent.adapter(ctx),
+    emailVerification: {
+      sendVerificationEmail: async (data) => {
+        console.log("[emailVerification] sendVerificationEmail called for:", data.user.email);
+        await sendResendEmail(
+          data.user.email,
+          "Verify your Synapse email",
+          `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0b0d11;color:#e4e7ed;border-radius:12px">
+            <div style="margin-bottom:24px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;background:linear-gradient(135deg,#6c72cb,#8187de);border-radius:8px;font-weight:700;font-size:16px;color:#fff">S</span>
+              <span style="margin-left:10px;font-weight:700;font-size:18px;vertical-align:middle">Synapse</span>
+            </div>
+            <h1 style="font-size:22px;font-weight:700;margin:0 0 10px">Verify your email</h1>
+            <p style="color:#7a8194;font-size:14px;line-height:1.6;margin:0 0 24px">
+              Click the button below to verify your email address and activate your account.
+            </p>
+            <a href="${data.url}" style="display:inline-block;padding:12px 24px;background:linear-gradient(135deg,#6c72cb,#8187de);color:#fff;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none">
+              Verify Email
+            </a>
+            <p style="color:#7a8194;font-size:12px;margin-top:24px">
+              If you didn't create a Synapse account, you can safely ignore this email.
+            </p>
+          </div>`,
+        );
+      },
+      sendOnSignUp: true,
+    },
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      requireEmailVerification: true,
+      sendResetPassword: async (data) => {
+        await sendResendEmail(
+          data.user.email,
+          "Reset your Synapse password",
+          `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0b0d11;color:#e4e7ed;border-radius:12px">
+            <div style="margin-bottom:24px">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;background:linear-gradient(135deg,#6c72cb,#8187de);border-radius:8px;font-weight:700;font-size:16px;color:#fff">S</span>
+              <span style="margin-left:10px;font-weight:700;font-size:18px;vertical-align:middle">Synapse</span>
+            </div>
+            <h1 style="font-size:22px;font-weight:700;margin:0 0 10px">Reset your password</h1>
+            <p style="color:#7a8194;font-size:14px;line-height:1.6;margin:0 0 24px">
+              We received a request to reset your password. Click the button below to choose a new one.
+            </p>
+            <a href="${data.url}" style="display:inline-block;padding:12px 24px;background:linear-gradient(135deg,#6c72cb,#8187de);color:#fff;border-radius:8px;font-weight:600;font-size:14px;text-decoration:none">
+              Reset Password
+            </a>
+            <p style="color:#7a8194;font-size:12px;margin-top:24px">
+              If you didn't request a password reset, you can safely ignore this email. The link expires in 1 hour.
+            </p>
+          </div>`,
+        );
+      },
     },
     socialProviders,
     plugins: [convex({ authConfig })],
