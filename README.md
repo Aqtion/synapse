@@ -14,7 +14,8 @@
 
 ### Convex
 
-- **Convex** — Serverless backend handling all persistent application state: sandbox metadata, ownership, tester assignments, and project–sandbox relationships. Convex actions orchestrate GitHub operations — importing repos, creating branches and commits, and opening or updating pull requests.
+- **Convex** — Serverless backend handling all persistent application state: sandbox metadata, ownership, tester assignments, and project–sandbox relationships. Convex actions orchestrate GitHub operations — importing repos, creating branches and commits, and opening or updating pull requests. 
+- **Resend** + **Better-Auth** - Seamless user authentication and verification.
 
 ### Projects & GitHub Import
 
