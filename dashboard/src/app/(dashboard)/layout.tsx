@@ -1,4 +1,4 @@
-import { Header } from "@/components/Header";
+import { LandingHeader } from "@/components/LandingHeader";
 
 export default function DashboardLayout({
   children,
@@ -7,8 +7,8 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1 min-w-0 px-4 pb-4">{children}</main>
+      <LandingHeader />
+      <main className="flex-1 min-w-0">{children}</main>
     </div>
   );
 }

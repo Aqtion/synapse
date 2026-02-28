@@ -181,7 +181,7 @@ export function SandboxCard({
               onOpen(sandbox);
             }
           }}
-          className="group relative cursor-pointer overflow-hidden transition-all bg-card border-2 hover:border-primary/50 hover:shadow-lg flex flex-col p-0"
+          className="group relative cursor-pointer overflow-hidden transition-all bg-card border-2 hover:border-primary hover:shadow-lg flex flex-col p-0"
         >
           {/* Image / preview area at top */}
           <div

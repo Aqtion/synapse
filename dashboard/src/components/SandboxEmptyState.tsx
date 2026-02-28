@@ -8,7 +8,7 @@ type SandboxEmptyStateProps = {
 export function SandboxEmptyState({ onInviteTesters }: SandboxEmptyStateProps) {
   return (
     <Card
-      className="border-dashed text-center py-14 px-6 cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/30"
+      className="border-dashed text-center py-14 px-6 cursor-pointer transition-colors hover:border-primary hover:bg-muted/30"
       role={onInviteTesters ? "button" : undefined}
       onClick={onInviteTesters}
       onKeyDown={

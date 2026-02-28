@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,11 +36,9 @@ export function SignInDialog({
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSocialSignIn = async (provider: "google" | "github") => {
     try {
-      setError(null);
       setIsLoading(true);
       await authClient.signIn.social({
         provider,
@@ -47,7 +46,7 @@ export function SignInDialog({
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to sign in";
-      setError(errorMessage);
+      toast.error(errorMessage);
       console.error("Social sign-in error:", err);
     } finally {
       setIsLoading(false);
@@ -57,27 +56,30 @@ export function SignInDialog({
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
 
-    // Validate required fields
     if (!email || !password) {
-      setError("Please fill in all fields");
+      toast.error("Please fill in all fields");
       setIsLoading(false);
       return;
     }
 
     try {
       await authClient.signIn.email({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
         callbackURL,
       });
     } catch (err: unknown) {
-      let errorMessage = "Failed to sign in";
-      if (err instanceof Error) {
+      let errorMessage = "Invalid email or password.";
+      const errObj = err && typeof err === "object" && "error" in err
+        ? (err as { error?: { code?: string; message?: string } }).error
+        : null;
+      if (errObj?.message && errObj.code !== "USER_ALREADY_EXISTS" && errObj.code !== "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
+        errorMessage = errObj.message;
+      } else if (err instanceof Error && err.message && !err.message.includes("USER_ALREADY_EXISTS")) {
         errorMessage = err.message;
       }
-      setError(errorMessage);
+      toast.error(errorMessage);
       console.error("Sign-in error:", err);
     } finally {
       setIsLoading(false);
@@ -87,81 +89,66 @@ export function SignInDialog({
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
 
-    // Validate required fields
     if (!name || !email || !password) {
-      setError("Please fill in all fields");
+      toast.error("Please fill in all fields");
       setIsLoading(false);
       return;
     }
 
-    // Validate password length (better-auth typically requires at least 8 characters)
     if (password.length < 8) {
-      setError("Password must be at least 8 characters long");
+      toast.error("Password must be at least 8 characters long");
       setIsLoading(false);
       return;
     }
 
-    // Basic email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      setError("Please enter a valid email address");
+      toast.error("Please enter a valid email address");
       setIsLoading(false);
       return;
     }
 
     try {
       const result = await authClient.signUp.email({
-        email: email.trim(),
+        email: email.trim().toLowerCase(),
         password,
         name: name.trim(),
       });
-      console.log("Sign-up result:", result);
 
-      // Only redirect if sign-up was successful
-      if (result) {
-        if (result.data == null) {
-          throw new Error("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL")
-        }
+      if (result?.data) {
         onOpenChange(false);
         window.location.href = callbackURL;
+        return;
+      }
+      if (result && !result.error) {
+        toast.success("Check your email to verify your account, then sign in.");
+        setIsLoading(false);
+        return;
       }
     } catch (err: unknown) {
-      // Check if user already exists - if so, try signing in instead
-      if (
+      const errCode =
         err &&
         typeof err === "object" &&
         "error" in err &&
         err.error &&
         typeof err.error === "object" &&
-        "code" in err.error &&
-        err.error.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"
-      ) {
-        console.log("User already exists, attempting sign-in instead...");
-        try {
-          await authClient.signIn.email({
-            email: email.trim(),
-            password,
-            callbackURL,
-          });
-          // Sign-in successful, close dialog and redirect
-          onOpenChange(false);
-          window.location.href = callbackURL;
-          return;
-        } catch (signInErr) {
-          // Sign-in also failed, show error
-          const signInErrorMessage =
-            signInErr instanceof Error
-              ? signInErr.message
-              : "Failed to sign in. Please check your password.";
-          setError(signInErrorMessage);
-          console.error("Sign-in error:", signInErr);
-          return;
-        }
+        "code" in err.error
+          ? (err.error as { code?: string }).code
+          : err instanceof Error
+            ? err.message
+            : null;
+
+      const isUserExists =
+        errCode === "USER_ALREADY_EXISTS" ||
+        errCode === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL";
+
+      if (isUserExists) {
+        toast.error("An account with this email already exists. Sign in above with your password.");
+        setIsLoading(false);
+        return;
       }
 
-      // Better error handling for other errors
       let errorMessage = "Failed to sign up";
       console.error("=== SIGN-UP ERROR ===");
       console.error("Full error object:", err);
@@ -212,7 +199,7 @@ export function SignInDialog({
       }
 
       console.error("=== END SIGN-UP ERROR ===");
-      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -239,8 +226,8 @@ export function SignInDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="signin" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs defaultValue="signin" className="w-full" >
+          <TabsList className="grid w-full grid-cols-2" variant="line">
             <TabsTrigger value="signin">Sign In</TabsTrigger>
             <TabsTrigger value="signup">Sign Up</TabsTrigger>
           </TabsList>
@@ -265,9 +252,6 @@ export function SignInDialog({
                   required
                 />
               </div>
-              {error && (
-                <div className="text-sm text-destructive">{error}</div>
-              )}
               <Button
                 type="submit"
                 className="w-full"
@@ -360,9 +344,6 @@ export function SignInDialog({
                   required
                 />
               </div>
-              {error && (
-                <div className="text-sm text-destructive">{error}</div>
-              )}
               <Button
                 type="submit"
                 className="w-full"

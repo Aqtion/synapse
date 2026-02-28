@@ -1,19 +1,27 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
 import { ConvexClientProvider } from "./ConvexClientProvider";
+import { UserProvider } from "@/contexts/UserContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { Inter, DM_Serif_Display, JetBrains_Mono } from "next/font/google";
+import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+
+const fontSans = Inter({
   subsets: ["latin"],
+  variable: "--font-sans",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const fontSerif = DM_Serif_Display({
   subsets: ["latin"],
+  variable: "--font-serif",
+  weight: "400",
+});
+
+const fontMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
@@ -55,14 +63,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-slate-50`}
+        className={`${fontSans.variable} ${fontSerif.variable} ${fontMono.variable} antialiased bg-background text-foreground`}
       >
         <ThemeProvider initialTheme="light">
           <ConvexClientProvider>
-            <TooltipProvider>
-              <div className="min-h-screen w-full flex flex-col">{children}</div>
-              <Toaster />
-            </TooltipProvider>
+            <UserProvider>
+              <TooltipProvider>
+                <div className="min-h-screen w-full flex flex-col">{children}</div>
+                <Toaster />
+              </TooltipProvider>
+            </UserProvider>
           </ConvexClientProvider>
         </ThemeProvider>
       </body>

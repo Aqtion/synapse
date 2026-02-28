@@ -16,17 +16,23 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import type { SandboxEntry } from "./SandboxCard";
 import { SandboxCard } from "./SandboxCard";
+import { SandboxEmptyState } from "./SandboxEmptyState";
 
 type SandboxListProps = {
+  projectId?: string;
   onOpenSandbox: (sandbox: SandboxEntry) => void;
   onInviteMoreTesters?: () => void;
 };
 
 export function SandboxList({
+  projectId,
   onOpenSandbox,
   onInviteMoreTesters,
 }: SandboxListProps) {
-  const sandboxes = useQuery(api.sandboxes.listSandboxes);
+  const sandboxes = useQuery(
+    api.sandboxes.listSandboxes,
+    projectId != null ? { projectId } : {},
+  );
   const updateLastOpened = useMutation(api.sandboxes.updateLastOpened);
   const removeSandbox = useMutation(api.sandboxes.removeSandbox);
   const renameSandboxMutation = useMutation(api.sandboxes.renameSandbox);
@@ -69,6 +75,12 @@ export function SandboxList({
     );
   }
 
+  if (sandboxes.length === 0 && onInviteMoreTesters) {
+    return (
+      <SandboxEmptyState onInviteTesters={onInviteMoreTesters} />
+    );
+  }
+
   if (sandboxes.length === 0) {
     return null;
   }
@@ -102,7 +114,7 @@ export function SandboxList({
           <Card
             role="button"
             tabIndex={0}
-            className="group border-dashed border-2 cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/30 flex min-h-[100px]"
+            className="group border-dashed border-2 cursor-pointer transition-colors hover:border-primary hover:bg-muted/30 flex min-h-[100px]"
             onClick={onInviteMoreTesters}
             onKeyDown={(e) =>
               (e.key === "Enter" || e.key === " ") && onInviteMoreTesters()

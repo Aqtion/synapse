@@ -1,4 +1,5 @@
 import { action, internalMutation, mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 
@@ -17,8 +18,28 @@ function makeId(name: string): string {
 }
 
 export const createSandbox = mutation({
-  args: { name: v.string() },
+  args: { name: v.string(), projectId: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (args.projectId) {
+      if (!identity) throw new Error("Must be signed in to create a sandbox in a project");
+      const userId = (identity as { subject?: string }).subject;
+      if (!userId) throw new Error("Invalid identity");
+      const project = await ctx.db
+        .query("projects")
+        .filter((q) => q.eq(q.field("id"), args.projectId))
+        .first();
+      if (!project) throw new Error("Project not found");
+      if (project.userId !== userId) {
+        const member = await ctx.db
+          .query("projectMembers")
+          .withIndex("by_projectId_userId", (q) =>
+            q.eq("projectId", args.projectId!).eq("userId", userId),
+          )
+          .first();
+        if (!member) throw new Error("You do not have access to this project");
+      }
+    }
     const name = args.name.trim() || "Untitled";
     const id = makeId(name);
     const now = Date.now();
@@ -27,6 +48,7 @@ export const createSandbox = mutation({
       name,
       createdAt: now,
       lastOpenedAt: now,
+      projectId: args.projectId,
     });
     return id;
   },
@@ -39,6 +61,7 @@ export const insertTesterSandbox = internalMutation({
     testerEmail: v.string(),
     testerName: v.optional(v.string()),
     now: v.number(),
+    projectId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await ctx.db.insert("sandboxes", {
@@ -48,6 +71,7 @@ export const insertTesterSandbox = internalMutation({
       testerName: args.testerName,
       createdAt: args.now,
       lastOpenedAt: args.now,
+      projectId: args.projectId,
     });
   },
 });
@@ -80,6 +104,7 @@ export const inviteTesters = action({
       }),
     ),
     sandboxId: v.optional(v.string()),
+    projectId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -111,6 +136,7 @@ export const inviteTesters = action({
           testerEmail: rawEmail,
           testerName: rawName || undefined,
           now,
+          projectId: args.projectId,
         });
       }
 
@@ -298,6 +324,40 @@ function generateIndexHtml(
 const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx']);
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', 'out']);
 
+/**
+ * Detect project type from a GitHub repo (for create-project flow).
+ * Uses fetchGitHubFile to check package.json and config files.
+ */
+export const detectProjectTypeFromRepo = action({
+  args: {
+    owner: v.string(),
+    repo: v.string(),
+    githubToken: v.optional(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    const token = args.githubToken ?? process.env.GITHUB_TOKEN;
+    const pkgJson = await fetchGitHubFile(args.owner, args.repo, "package.json", token);
+    if (pkgJson) {
+      try {
+        const pkg = JSON.parse(pkgJson) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+        const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+        if (deps["next"]) return "nextjs";
+        if (deps["vite"]) return "vite";
+        if (deps["vue"] || deps["vue-router"]) return "vue";
+        if (deps["react"]) return "react";
+      } catch { /* ignore */ }
+    }
+    const nextConfig = await fetchGitHubFile(args.owner, args.repo, "next.config.js", token)
+      ?? await fetchGitHubFile(args.owner, args.repo, "next.config.mjs", token)
+      ?? await fetchGitHubFile(args.owner, args.repo, "next.config.ts", token);
+    if (nextConfig) return "nextjs";
+    const viteConfig = await fetchGitHubFile(args.owner, args.repo, "vite.config.ts", token)
+      ?? await fetchGitHubFile(args.owner, args.repo, "vite.config.js", token);
+    if (viteConfig) return "vite";
+    return "other";
+  },
+});
+
 export const importFromGitHub = action({
   args: {
     sandboxId: v.string(),
@@ -379,8 +439,33 @@ export const importFromGitHub = action({
 });
 
 export const listSandboxes = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { projectId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    if (args.projectId) {
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) return [];
+      const userId = (identity as { subject?: string }).subject;
+      if (!userId) return [];
+      const project = await ctx.db
+        .query("projects")
+        .filter((q) => q.eq(q.field("id"), args.projectId))
+        .first();
+      if (!project) return [];
+      if (project.userId !== userId) {
+        const member = await ctx.db
+          .query("projectMembers")
+          .withIndex("by_projectId_userId", (q) =>
+            q.eq("projectId", args.projectId!).eq("userId", userId),
+          )
+          .first();
+        if (!member) return [];
+      }
+      const list = await ctx.db
+        .query("sandboxes")
+        .withIndex("by_projectId", (q) => q.eq("projectId", args.projectId!))
+        .collect();
+      return list.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
+    }
     return await ctx.db
       .query("sandboxes")
       .withIndex("by_lastOpenedAt")
@@ -390,20 +475,64 @@ export const listSandboxes = query({
 });
 
 /**
- * Returns the sandbox for the given id only if the current user is the assigned tester.
- * Used to gate /s/[id] so only that tester can load the sandbox.
+ * Returns the sandbox for the given id only if the current user has access (project owner/member or legacy sandbox).
+ * Used to gate /s/[id].
  */
 export const getSandboxForCurrentUser = query({
   args: { sandboxId: v.string() },
   handler: async (ctx, args) => {
-    // Auth-based gating temporarily disabled to allow sandbox access without sign-in
     const row = await ctx.db
       .query("sandboxes")
       .filter((q) => q.eq(q.field("id"), args.sandboxId))
       .first();
-    return row ?? null;
+    if (!row) return null;
+    if (!row.projectId) return row;
+    const projectId = row.projectId;
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const userId = (identity as { subject?: string }).subject;
+    if (!userId) return null;
+    const project = await ctx.db
+      .query("projects")
+      .filter((q) => q.eq(q.field("id"), projectId))
+      .first();
+    if (!project) return null;
+    if (project.userId === userId) return row;
+    const member = await ctx.db
+      .query("projectMembers")
+      .withIndex("by_projectId_userId", (q) =>
+        q.eq("projectId", projectId).eq("userId", userId),
+      )
+      .first();
+    return member ? row : null;
   },
 });
+
+async function userCanAccessSandbox(ctx: MutationCtx, sandboxId: string): Promise<boolean> {
+  const row = await ctx.db
+    .query("sandboxes")
+    .filter((q) => q.eq(q.field("id"), sandboxId))
+    .first();
+  if (!row) return false;
+  if (!row.projectId) return true;
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return false;
+  const userId = (identity as { subject?: string }).subject;
+  if (!userId) return false;
+  const project = await ctx.db
+    .query("projects")
+    .filter((q) => q.eq(q.field("id"), row.projectId))
+    .first();
+  if (!project) return false;
+  if (project.userId === userId) return true;
+  const member = await ctx.db
+    .query("projectMembers")
+    .withIndex("by_projectId_userId", (q) =>
+      q.eq("projectId", row.projectId!).eq("userId", userId),
+    )
+    .first();
+  return !!member;
+}
 
 export const updateLastOpened = mutation({
   args: { id: v.string() },
@@ -412,9 +541,10 @@ export const updateLastOpened = mutation({
       .query("sandboxes")
       .filter((q) => q.eq(q.field("id"), args.id))
       .first();
-    if (row) {
-      await ctx.db.patch(row._id, { lastOpenedAt: Date.now() });
-    }
+    if (!row) return null;
+    const canAccess = await userCanAccessSandbox(ctx, args.id);
+    if (!canAccess) throw new Error("You do not have access to this sandbox");
+    await ctx.db.patch(row._id, { lastOpenedAt: Date.now() });
     return null;
   },
 });
@@ -426,9 +556,10 @@ export const removeSandbox = mutation({
       .query("sandboxes")
       .filter((q) => q.eq(q.field("id"), args.id))
       .first();
-    if (row) {
-      await ctx.db.delete(row._id);
-    }
+    if (!row) return null;
+    const canAccess = await userCanAccessSandbox(ctx, args.id);
+    if (!canAccess) throw new Error("You do not have access to this sandbox");
+    await ctx.db.delete(row._id);
     return null;
   },
 });
@@ -441,9 +572,10 @@ export const renameSandbox = mutation({
       .query("sandboxes")
       .filter((q) => q.eq(q.field("id"), args.id))
       .first();
-    if (row) {
-      await ctx.db.patch(row._id, { name });
-    }
+    if (!row) return null;
+    const canAccess = await userCanAccessSandbox(ctx, args.id);
+    if (!canAccess) throw new Error("You do not have access to this sandbox");
+    await ctx.db.patch(row._id, { name });
     return null;
   },
 });
@@ -456,17 +588,12 @@ export const renameSandbox = mutation({
 export const ensureSandboxOnWorker = action({
   args: { sandboxId: v.string() },
   handler: async (ctx, args) => {
-    // Auth + ownership checks temporarily disabled so sandboxes can start without sign-in
-    // const identity = await ctx.auth.getUserIdentity();
-    // if (!identity) {
-    //   throw new Error("You must be signed in to open this sandbox");
-    // }
-    // const sandbox = await ctx.runQuery(api.sandboxes.getSandboxForCurrentUser, {
-    //   sandboxId: args.sandboxId,
-    // });
-    // if (!sandbox) {
-    //   throw new Error("You do not have access to this sandbox");
-    // }
+    const sandbox = await ctx.runQuery(api.sandboxes.getSandboxForCurrentUser, {
+      sandboxId: args.sandboxId,
+    });
+    if (!sandbox) {
+      throw new Error("You do not have access to this sandbox");
+    }
     const base = process.env.WORKER_BASE_URL;
     if (!base) {
       throw new Error("WORKER_BASE_URL is not set in Convex environment");

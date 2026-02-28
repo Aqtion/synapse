@@ -1,10 +1,5 @@
-import { SandboxConvexErrorBoundary } from "@/components/SandboxConvexErrorBoundary";
-import { SandboxDashboard } from "@/components/SandboxDashboard";
+import { AuthRedirectOrLanding } from "@/components/AuthRedirectOrLanding";
 
 export default function DashboardPage() {
-  return (
-    <SandboxConvexErrorBoundary>
-      <SandboxDashboard />
-    </SandboxConvexErrorBoundary>
-  );
+  return <AuthRedirectOrLanding />;
 }

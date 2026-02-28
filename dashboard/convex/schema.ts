@@ -9,17 +9,44 @@ export default defineSchema({
     success: v.boolean(),
     errorMessage: v.optional(v.string()),
   }),
+  projects: defineTable({
+    id: v.string(),
+    userId: v.string(),
+    name: v.string(),
+    githubRepo: v.optional(v.string()),
+    projectType: v.optional(v.string()),
+    createdAt: v.number(),
+  }).index("by_userId", ["userId"]),
+  projectMembers: defineTable({
+    projectId: v.string(),
+    userId: v.string(),
+    email: v.string(),
+    invitedAt: v.optional(v.number()),
+  })
+    .index("by_projectId", ["projectId"])
+    .index("by_userId", ["userId"])
+    .index("by_projectId_userId", ["projectId", "userId"]),
   sandboxes: defineTable({
     id: v.string(),
     name: v.string(),
     createdAt: v.number(),
     lastOpenedAt: v.number(),
+    projectId: v.optional(v.string()),
     testerEmail: v.optional(v.string()),
     testerUserId: v.optional(v.string()),
     testerName: v.optional(v.string()),
     githubRepo: v.optional(v.string()),
     prUrl: v.optional(v.string()),
     prNumber: v.optional(v.number()),
-  }).index("by_lastOpenedAt", ["lastOpenedAt"]).index("by_sandbox_id", ["id"]),
+  })
+    .index("by_lastOpenedAt", ["lastOpenedAt"])
+    .index("by_sandbox_id", ["id"])
+    .index("by_projectId", ["projectId"]),
+  userEmails: defineTable({
+    userId: v.string(),
+    email: v.string(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_email", ["email"]),
 });
 
