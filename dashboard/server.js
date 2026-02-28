@@ -53,37 +53,56 @@ app.prepare().then(() => {
       return;
     }
 
+    let clientClosed = false;
+
     const elWs = new (require("ws"))(EL_STT_URL, {
       headers: { "xi-api-key": apiKey },
     });
 
     elWs.on("open", () => {
-      ws.send(JSON.stringify({ type: "status", status: "connected" }));
+      if (clientClosed) {
+        elWs.close();
+        return;
+      }
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "status", status: "connected" }));
+      }
     });
 
     elWs.on("message", (data) => {
+      if (clientClosed) return;
       try {
         const msg = JSON.parse(data.toString());
         const out = { ...msg, type: msg.message_type };
         delete out.message_type;
-        ws.send(JSON.stringify(out));
+        if (ws.readyState === 1) ws.send(JSON.stringify(out));
       } catch (err) {
         console.error("[STT] parse error:", err);
       }
     });
 
     elWs.on("error", (err) => {
-      console.error("[STT] ElevenLabs error:", err);
-      try {
-        ws.send(JSON.stringify({ type: "error", message: "ElevenLabs upstream error" }));
-      } catch (_) {}
-      ws.close();
+      const closedBeforeConnected =
+        err && typeof err.message === "string" && err.message.includes("closed before the connection was established");
+      if (!closedBeforeConnected) {
+        console.error("[STT] ElevenLabs error:", err);
+      }
+      if (ws.readyState === 1) {
+        try {
+          if (!closedBeforeConnected) {
+            ws.send(JSON.stringify({ type: "error", message: "ElevenLabs upstream error" }));
+          }
+          ws.close();
+        } catch (_) {}
+      }
     });
 
     elWs.on("close", () => {
-      try {
-        ws.close();
-      } catch (_) {}
+      if (ws.readyState === 1) {
+        try {
+          ws.close();
+        } catch (_) {}
+      }
     });
 
     ws.on("message", (raw) => {
@@ -104,7 +123,13 @@ app.prepare().then(() => {
     });
 
     ws.on("close", () => {
-      elWs.close();
+      clientClosed = true;
+      // Only call elWs.close() if it's already open or closing; if still CONNECTING,
+      // the ws library emits "closed before connection" when we close. We'll close
+      // elWs in elWs.on("open") when clientClosed is set instead.
+      if (elWs.readyState === 1 || elWs.readyState === 2) {
+        elWs.close();
+      }
     });
   });
 
