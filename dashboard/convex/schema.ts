@@ -20,6 +20,6 @@ export default defineSchema({
     githubRepo: v.optional(v.string()),
     prUrl: v.optional(v.string()),
     prNumber: v.optional(v.number()),
-  }).index("by_lastOpenedAt", ["lastOpenedAt"]),
+  }).index("by_lastOpenedAt", ["lastOpenedAt"]).index("by_sandbox_id", ["id"]),
 });
 

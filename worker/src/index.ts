@@ -199,7 +199,7 @@ export default {
 
     // ── Studio UI ──
     if (sub === '' || sub === 'index.html') {
-      return new Response(studioHtml(sandboxId), {
+      return new Response(studioHtml(sandboxId, env as unknown as Record<string, string | undefined>), {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
     }
@@ -467,6 +467,9 @@ export default {
   },
 };
 
-function studioHtml(sandboxId: string): string {
-  return STUDIO_HTML.replaceAll('{{SANDBOX_ID}}', sandboxId);
+function studioHtml(sandboxId: string, env: Record<string, string | undefined>): string {
+  const dashboardUrl = (env.DASHBOARD_URL ?? '').replace(/\/$/, '') || 'http://localhost:3000';
+  return STUDIO_HTML
+    .replaceAll('{{SANDBOX_ID}}', sandboxId)
+    .replaceAll('{{DASHBOARD_URL}}', dashboardUrl);
 }

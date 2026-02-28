@@ -56,10 +56,10 @@ export function SandboxDashboard() {
       if (testerEmail) {
         await inviteTestersAction({
           testers: [{ name: testerName, email: testerEmail }],
+          sandboxId,
         });
       }
       setModalOpen(false);
-      router.push(`/s/${sandboxId}`);
     } catch (err) {
       console.error("GitHub import failed:", err);
     } finally {
