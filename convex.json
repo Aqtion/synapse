@@ -1,0 +1,7 @@
+{
+  "functions": "packages/backend/convex/",
+  "generateCommonJSApi": false,
+  "node": {
+    "externalPackages": []
+  }
+}
