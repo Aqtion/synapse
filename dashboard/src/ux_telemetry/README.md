@@ -1,6 +1,6 @@
 # UX Telemetry (Aura11y)
 
-**Client-only** telemetry for the **beta-tester's session** (Cloudflare sandbox). It runs in the **tester's browser**, not in the dashboard or the Worker. The dashboard uses this module only for the **test page** (`/ux_telemetry`); the real consumer is the page or bundle that beta testers load.
+**Client-only** telemetry for the **beta-tester’s session** (Cloudflare sandbox). It runs in the **tester’s browser**, not in the dashboard or the Worker. The dashboard uses this module only for the **test page** (`/ux_telemetry`); the real consumer is the page or bundle that beta testers load.
 
 - All code is `"use client"`; no server or dashboard-specific logic.
 - Single source of truth: this folder. Reuse it in the sandbox route or in a client bundle served to testers.
@@ -15,17 +15,17 @@ dashboard/src/ux_telemetry/
   index.ts                 # Barrel: re-exports from subfolders
   emotion_tracking/        # Hume AI webcam stream
     useHumeStream.ts, types.ts, constants.ts, index.ts
+  behavioral_tracking/     # PostHog analytics + session replay
+    posthog.ts, types.ts, index.ts
   mouse_tracking/          # Cursor + element under cursor / intent (radius)
     useMouseTracker.ts, types.ts, index.ts
-  behavioral_tracking/    # PostHog: product analytics + session replay + rage click
-    posthog.ts, types.ts, index.ts
 ```
 
 | Subfolder | Purpose |
 |-----------|---------|
 | **emotion_tracking** | Hume Expression Measurement (getUserMedia + WebSocket, ≤2 FPS). |
-| **mouse_tracking** | Throttled (100ms) cursor + `elementFromPoint`; intent via radius. |
-| **behavioral_tracking** | PostHog: product analytics (`capture`), session replay, rage-click. `onBehavioralMetric` for real-time metrics (data suitable for later Convex storage). |
+| **behavioral_tracking** | PostHog product analytics + session replay; realtime event hook via `_onCapture`. |
+| **mouse_tracking** | Throttled (100ms) cursor + `elementFromPoint`; intent via radius so “nearest interactive” works when cursor is near a control. |
 
 ---
 

@@ -11,8 +11,5 @@
 		"dev:telemetry": "npm run dev:dashboard"
 	},
 	"author": "",
-	"license": "MIT",
-	"devDependencies": {
-		"@types/node": "^22.0.0"
-	}
+	"license": "MIT"
 }

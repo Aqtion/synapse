@@ -1,9 +1,5 @@
 "use client";
 
-export {
-  capture,
-  getSessionReplayUrl,
-  initPostHog,
-  isPostHogReady,
-} from "./posthog";
-export type { BehavioralMetric, PostHogConfig } from "./types";
+export { initPostHog, isPostHogReady, captureEvent, getSessionReplayUrl, getDistinctId, isFrictionEvent } from "./posthog";
+export type { PostHogConfig, PostHogCapturedEvent, PostHogEventName } from "./types";
+

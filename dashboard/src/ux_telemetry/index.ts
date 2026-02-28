@@ -6,7 +6,7 @@
  *
  * - emotion_tracking: Hume AI webcam stream (useHumeStream)
  * - mouse_tracking: throttled cursor + intent with radius (useMouseTracker)
- * - behavioral_tracking: PostHog product analytics + session replay + rage click (initPostHog, capture, getSessionReplayUrl)
+ * - behavioral_tracking: PostHog analytics + session replay (initPostHog)
  */
 
 export { useHumeStream } from "./emotion_tracking";
@@ -35,10 +35,13 @@ export type {
 } from "./mouse_tracking";
 
 export {
-  capture,
-  getSessionReplayUrl,
   initPostHog,
   isPostHogReady,
+  captureEvent,
+  getSessionReplayUrl,
+  getDistinctId,
+  isFrictionEvent,
 } from "./behavioral_tracking";
-export type { BehavioralMetric, PostHogConfig } from "./behavioral_tracking";
+export type { PostHogConfig, PostHogCapturedEvent, PostHogEventName } from "./behavioral_tracking";
+
 export type { FrictionPayload } from "./types";

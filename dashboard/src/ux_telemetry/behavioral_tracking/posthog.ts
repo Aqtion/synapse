@@ -1,90 +1,121 @@
 "use client";
 
-import type { BehavioralMetric, PostHogConfig } from "./types";
+import type { PostHogCapturedEvent, PostHogConfig, PostHogEventName } from "./types";
 
-type PostHogInstance = {
-  get_session_replay_url?: () => string;
-  capture: (event: string, properties?: Record<string, unknown>) => void;
+type CaptureResult = {
+  event?: string;
+  properties?: Record<string, unknown>;
+  uuid?: string;
+  timestamp?: string;
 };
 
-let posthog: PostHogInstance | null = null;
-let configCallbacks: Pick<PostHogConfig, "onRageClick" | "onBehavioralMetric"> = {};
+type PostHogInstance = {
+  init: (key: string, config: Record<string, unknown>) => void;
+  capture: (name: string, props?: Record<string, unknown>) => void;
+  get_session_replay_url: () => string;
+  get_distinct_id?: () => string;
+};
+
+let ph: PostHogInstance | null = null;
+let lastInitKey: string | null = null;
+let lastInitHost: string | null = null;
+
+let onRageClick: PostHogConfig["onRageClick"] = undefined;
+let onEventCaptured: PostHogConfig["onEventCaptured"] = undefined;
+
+function toCapturedEvent(eventName: string, eventData: CaptureResult): PostHogCapturedEvent {
+  return {
+    name: eventName as PostHogEventName,
+    properties: eventData?.properties,
+    uuid: eventData?.uuid,
+    timestamp: eventData?.timestamp,
+  };
+}
 
 /**
- * Initialize PostHog for the beta-tester session: product analytics + session replay.
- * Safe to call multiple times; re-inits only if not yet inited.
- * Requires posthog-js. Set NEXT_PUBLIC_POSTHOG_KEY (or config.apiKey).
+ * Initialize PostHog for beta-tester sessions:
+ * - Product analytics (events)
+ * - Session replay (recording) + get_session_replay_url()
+ *
+ * Safe to call multiple times; subsequent calls update callbacks.
  */
-export async function initPostHog(config: PostHogConfig): Promise<boolean> {
-  const key =
-    config.apiKey?.trim() ||
-    (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_POSTHOG_KEY : "") ||
-    "";
-  if (!key) return false;
+export async function initPostHog(config: PostHogConfig = {}): Promise<boolean> {
+  const apiKey = (config.apiKey ?? process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "").trim();
+  if (!apiKey) return false;
 
-  configCallbacks = {
-    onRageClick: config.onRageClick ?? null,
-    onBehavioralMetric: config.onBehavioralMetric ?? null,
-  };
+  const apiHost = (config.apiHost ?? process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com").trim();
+  onRageClick = config.onRageClick;
+  onEventCaptured = config.onEventCaptured;
+
+  if (ph && lastInitKey === apiKey && lastInitHost === apiHost) {
+    return true;
+  }
 
   try {
     const mod = await import("posthog-js");
-    const ph = mod.default;
-    if (posthog != null) return true;
+    const posthog = mod.default as unknown as PostHogInstance;
 
-    ph.init(key, {
-      api_host:
-        config.apiHost ||
-        (typeof process !== "undefined" ? process.env.NEXT_PUBLIC_POSTHOG_HOST : undefined) ||
-        "https://us.i.posthog.com",
+    posthog.init(apiKey, {
+      api_host: apiHost,
       person_profiles: "identified_only",
-      session_recording: {
-        recordCrossOriginIframes: false,
-      },
-      capture_pageview: true,
-      _onCapture: (eventName: string) => {
-        if (eventName === "$rageclick") {
-          configCallbacks.onRageClick?.();
-          configCallbacks.onBehavioralMetric?.({
-            type: "rage_click",
-            timestamp: Date.now(),
-          });
-        }
+      // Autocapture is on by default; it emits $rageclick and $dead_click.
+      session_recording:
+        config.enableSessionReplay === false
+          ? false
+          : {
+              recordCrossOriginIframes: config.recordCrossOriginIframes ?? false,
+              maskAllInputs: true,
+            },
+      _onCapture: (eventName: string, eventData: CaptureResult) => {
+        const evt = toCapturedEvent(eventName, eventData);
+        onEventCaptured?.(evt);
+        if (eventName === "$rageclick") onRageClick?.(evt);
       },
     });
-    posthog = ph as unknown as PostHogInstance;
+
+    ph = posthog;
+    lastInitKey = apiKey;
+    lastInitHost = apiHost;
     return true;
   } catch {
     return false;
   }
 }
 
-/**
- * Get the current session replay URL when available (e.g. for FrictionPayload).
- * May return "" until PostHog has the replay URL ready.
- */
-export function getSessionReplayUrl(): string {
-  if (!posthog || typeof posthog.get_session_replay_url !== "function") {
-    return "";
-  }
+export function isPostHogReady(): boolean {
+  return ph != null;
+}
+
+export function captureEvent(name: string, properties?: Record<string, unknown>): void {
+  if (!ph) return;
   try {
-    const url = posthog.get_session_replay_url();
+    ph.capture(name, properties);
+  } catch {
+    // ignore
+  }
+}
+
+export function getSessionReplayUrl(): string {
+  if (!ph) return "";
+  try {
+    const url = ph.get_session_replay_url();
     return typeof url === "string" ? url : "";
   } catch {
     return "";
   }
 }
 
-/** Capture a custom event for product analytics (beta-tester session). */
-export function capture(eventName: string, properties?: Record<string, unknown>): void {
-  if (!posthog) return;
+export function getDistinctId(): string {
+  if (!ph?.get_distinct_id) return "";
   try {
-    posthog.capture(eventName, properties);
+    const id = ph.get_distinct_id();
+    return typeof id === "string" ? id : "";
   } catch {
-    /* ignore */
+    return "";
   }
 }
 
-export function isPostHogReady(): boolean {
-  return posthog != null;
+/** For friction: true if event indicates strong frustration. */
+export function isFrictionEvent(eventName: string): eventName is "$rageclick" | "$dead_click" {
+  return eventName === "$rageclick" || eventName === "$dead_click";
 }
