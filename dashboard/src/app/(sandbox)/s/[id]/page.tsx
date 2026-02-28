@@ -12,6 +12,16 @@ const WORKER_BASE_URL =
   typeof window !== "undefined"
     ? process.env.NEXT_PUBLIC_WORKER_BASE_URL
     : undefined;
+const SANDBOX_FRAME_ID = "sandboxFrame";
+
+function sendPostHogStop() {
+  try {
+    const frame = document.getElementById(SANDBOX_FRAME_ID) as HTMLIFrameElement | null;
+    if (frame?.contentWindow) frame.contentWindow.postMessage({ type: "POSTHOG_STOP" }, "*");
+  } catch {
+    // ignore
+  }
+}
 
 export default function SandboxPage() {
   const params = useParams();
@@ -43,8 +53,16 @@ export default function SandboxPage() {
         setPhDebug("script_loaded");
       if (ev.data?.type === "POSTHOG_IFRAME_INITED") setPhDebug("inited");
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") sendPostHogStop();
+    };
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      sendPostHogStop();
+    };
   }, [id]);
 
   const cachedSandboxRef = useRef<{ id: string; value: unknown } | null>(null);

@@ -520,6 +520,22 @@
       }
     });
 
+    function sendPostHogToPreview() {
+      try {
+        var c = window.__POSTHOG_PREVIEW_CONFIG__;
+        if (c && els.previewFrame && els.previewFrame.contentWindow) {
+          els.previewFrame.contentWindow.postMessage({
+            type: 'POSTHOG_INIT',
+            apiKey: c.apiKey,
+            apiHost: c.apiHost,
+            sandboxId: c.sandboxId,
+            isPreview: true
+          }, '*');
+        }
+      } catch (e) {}
+    }
+    els.previewFrame.addEventListener('load', sendPostHogToPreview);
+
     initSandbox();
   </script>
 </body>

@@ -106,6 +106,31 @@ export async function GET() {
       : [];
     const hasRageclick = eventNames.some((n) => n === "$rageclick" || n.toLowerCase().includes("rage"));
 
+    const recordingsList = Array.isArray(sessionRecordings?.results) ? sessionRecordings.results : [];
+    const newestRec = recordingsList[0] as
+      | { id?: string; start_url?: string; start_time?: string; end_time?: string; recording_duration?: number; ongoing?: boolean }
+      | undefined;
+    const verification =
+      newestRec ?
+        {
+          newest_recording: {
+            id: newestRec.id,
+            start_url: newestRec.start_url,
+            start_time: newestRec.start_time,
+            end_time: newestRec.end_time,
+            recording_duration_sec: newestRec.recording_duration,
+            duration_min: newestRec.recording_duration != null ? Math.round((newestRec.recording_duration / 60) * 10) / 10 : null,
+            ongoing: newestRec.ongoing ?? false,
+            is_preview_frame: Boolean(newestRec.start_url?.includes("/preview")),
+          },
+          checks: {
+            preview_only_session: Boolean(newestRec.start_url?.includes("/preview")),
+            session_has_end_time: Boolean(newestRec.end_time),
+            copy_this_for_debug: "Paste the verification block + Summary + session_recordings.results[0] (and PostHog portal snippet) into chat for debugging.",
+          },
+        }
+      : null;
+
     return NextResponse.json({
       projectId: projectIdStr,
       projectName,
@@ -117,6 +142,7 @@ export async function GET() {
         ? { count: eventDefinitions.length, sample_names: eventNames.slice(0, 40), hasRageclick }
         : eventDefinitions,
       session_recordings: sessionRecordings,
+      verification,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
