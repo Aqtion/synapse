@@ -6,8 +6,9 @@
 	"description": "A minimal example of using the Sandbox SDK",
 	"scripts": {
 		"deploy": "wrangler deploy",
-		"dev": "wrangler dev",
-		"start": "wrangler dev",
+		"dev": "wrangler dev --local",
+		"dev:remote": "wrangler dev",
+		"start": "wrangler dev --local",
 		"cf-typegen": "wrangler types",
 		"typecheck": "tsc --noEmit"
 	},

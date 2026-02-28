@@ -32,6 +32,9 @@
 			}
 		]
 	},
+	"dev": {
+		"enable_containers": false
+	},
 	"migrations": [
 		{
 			"new_sqlite_classes": [
