@@ -14,11 +14,22 @@ The core of Synapse runs entirely on Cloudflare's infrastructure:
 
 ### Convex
 
-- **Convex** — Serverless backend-as-a-service handling all persistent application state: sandbox metadata, ownership, GitHub PR tracking (`prUrl`, `prNumber`, `githubRepo`). Convex actions power the `createPullRequest` flow — they fetch the live sandbox file contents from the Worker's `/api/export` endpoint, query Supermemory for the sandbox's change history to auto-generate a PR description, then call the GitHub API to create branches, commits, and pull requests programmatically.
+- **Convex** — Serverless backend-as-a-service handling all persistent application state: sandbox metadata, ownership, tester assignments, project–sandbox relationships, and GitHub PR tracking (`prUrl`, `prNumber`, `githubRepo`). Convex actions power the `createPullRequest` flow — they fetch the live sandbox file contents from the Worker's `/api/export` endpoint, query Supermemory for the sandbox's change history to auto-generate a PR description from AI-generated document titles, then call the GitHub API to create branches, commits, and pull requests programmatically. Updating an existing PR also patches its description with the latest change history.
+
+### Authentication & Email
+
+- **better-auth + Convex** — Email/password and social authentication, integrated via `@convex-dev/better-auth`. Supports email verification and password reset flows.
+- **Resend** — Transactional email delivery for auth emails (verification, password reset) and sandbox invite emails sent to testers when an admin creates or assigns a sandbox.
+
+### Projects & GitHub Import
+
+- **Projects** — Sandboxes are organized under Projects. Each project can be linked to a GitHub repository, which is used as the target for PR creation and as the source for importing a React app into a sandbox.
+- **GitHub Repo Import** — Admins can import a GitHub repository containing a React app directly into a sandbox. The Worker fetches the repo's file tree and contents via the GitHub API, inlines local imports, strips ES module syntax, and generates a self-contained `index.html` that runs the app in the browser using Babel standalone and React/ReactDOM UMD builds from unpkg. This compilation runs entirely on the server — no build tools or containers required.
+- **Admin Invite Flow** — When an admin creates a sandbox under a project, they can simultaneously invite a tester by email. If the project has a linked GitHub repo, the repo is automatically imported into the sandbox before the invite email is sent. The tester is attached to that sandbox rather than creating a duplicate entry.
 
 ### Frontend
 
-- **Next.js** — Dashboard for creating and managing sandboxes, with the Studio IDE embedded via iframe pointing at the Worker-served UI.
+- **Next.js** — Dashboard for creating and managing sandboxes, with the Studio IDE embedded via iframe pointing at the Worker-served UI. The Studio's back button navigates to the dashboard URL (configurable via `DASHBOARD_URL` environment variable), not the Worker root.
 
 ### Architecture Summary
 
@@ -26,13 +37,14 @@ The core of Synapse runs entirely on Cloudflare's infrastructure:
 Browser (Next.js Dashboard)
     │
     ├── Convex (DB + Actions)
-    │       └── GitHub API (PR creation)
-    │       └── Supermemory API (change history search)
+    │       ├── GitHub API (repo import + PR creation/update)
+    │       ├── Supermemory API (change history search → PR description)
+    │       └── Resend (auth emails + tester invite emails)
     │
     └── Cloudflare Worker (edge)
             ├── Cloudflare Container / Durable Object (per-sandbox filesystem)
             ├── Supermemory API (store + retrieve memory per sandbox)
-            └── Claude AI (code generation via prompt)
+            └── Cloudflare AI (code generation via prompt)
 ```
 
-Every sandbox is a live, isolated container at the edge with a persistent memory trail — Supermemory gives it a brain across sessions, and Convex + GitHub turns that history into an automated pull request.
+Every sandbox is a live, isolated container at the edge with a persistent memory trail — Supermemory gives it a brain across sessions, Convex + GitHub turns that history into an automated pull request, and the invite flow lets admins ship a tester-ready sandbox in a single action.
