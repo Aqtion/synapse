@@ -8,7 +8,8 @@
 		"dev:worker": "cd worker && npm run dev",
 		"dev:dashboard": "cd dashboard && npm run dev",
 		"dev": "npm run dev:worker",
-		"dev:telemetry": "npm run dev:dashboard"
+		"dev:telemetry": "npm run dev:dashboard",
+		"dev:dashboard-test": "cd dashboard-test && npm run dev"
 	},
 	"author": "",
 	"license": "MIT",

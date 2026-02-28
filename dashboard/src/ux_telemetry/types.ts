@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * Payload emitted when friction is detected (rage click or sustained
- * Confusion/Concentration). Consumed by Voice AI / Modal. Used by the
- * TelemetryProvider in the beta-tester sandbox.
+ * Offline friction summary (for analysis only).
+ *
+ * We no longer run a live TelemetryProvider / friction loop during the
+ * tester session. Instead, we log raw telemetry (Hume + mouse + PostHog)
+ * with timestamps and can materialize this shape later in Convex or a
+ * batch job when aggregating signals into a friction score.
  */
 export interface FrictionPayload {
   trigger_source: "hume_biometric" | "posthog_behavioral";

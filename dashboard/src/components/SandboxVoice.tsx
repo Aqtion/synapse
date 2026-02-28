@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { Mic } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Mic, Minus, Plus } from "lucide-react";
 import { runPrompt } from "@/lib/workerClient";
 import { cn } from "@/lib/utils";
 
@@ -15,10 +15,12 @@ function toBase64(buffer: ArrayBuffer): string {
 }
 
 export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
-  const [isListening, setIsListening] = useState(false);
+  const [sttReady, setSttReady] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [transcript, setTranscript] = useState({ committed: "", partial: "" });
+  const [isHolding, setIsHolding] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [transcriptMinimized, setTranscriptMinimized] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -26,24 +28,12 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const committedRef = useRef("");
+  const partialRef = useRef("");
+  const captureStartRef = useRef(0);
+  const mountedRef = useRef(true);
+  const transcriptBoxRef = useRef<HTMLDivElement>(null);
 
-  const stopListening = useCallback(() => {
-    workletRef.current?.disconnect();
-    sourceRef.current?.disconnect();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    audioCtxRef.current?.close();
-    wsRef.current?.close();
-    streamRef.current = null;
-    sourceRef.current = null;
-    workletRef.current = null;
-    audioCtxRef.current = null;
-    wsRef.current = null;
-    setIsListening(false);
-    setStatus(null);
-    setTranscript({ committed: committedRef.current, partial: "" });
-  }, []);
-
-  const startListening = useCallback(async () => {
+  const connectSTT = useCallback(async () => {
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -53,6 +43,10 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
       setStatus("Microphone access denied.");
       return;
     }
+    if (!mountedRef.current) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
     streamRef.current = stream;
 
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
@@ -60,7 +54,7 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
 
     try {
       await ctx.audioWorklet.addModule("/audio-processor.js");
-    } catch (e) {
+    } catch {
       setStatus("Failed to load audio processor.");
       stream.getTracks().forEach((t) => t.stop());
       return;
@@ -71,35 +65,47 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
     sourceRef.current = source;
     workletRef.current = worklet;
 
-    const protocol = typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:";
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws/stt`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     committedRef.current = "";
+    partialRef.current = "";
 
     ws.onopen = () => {
-      setStatus("Listening…");
+      setSttReady(true);
+      setStatus(null);
     };
 
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data as string) as { type?: string; text?: string };
         if (msg.type === "partial_transcript") {
-          setTranscript((prev) => ({ ...prev, partial: msg.text ?? "" }));
+          partialRef.current = msg.text ?? "";
+          setTranscript((prev) => ({ ...prev, partial: partialRef.current }));
         } else if (msg.type === "committed_transcript") {
           const text = msg.text ?? "";
           committedRef.current += (committedRef.current ? " " : "") + text;
-          setTranscript((prev) => ({ committed: committedRef.current, partial: "" }));
+          partialRef.current = "";
+          setTranscript({ committed: committedRef.current, partial: "" });
         } else if (msg.type === "error") {
           setStatus(`Error: ${(msg as { message?: string }).message ?? "Unknown"}`);
-          stopListening();
         }
-      } catch (_) {}
+      } catch {}
     };
 
     ws.onclose = () => {
-      if (streamRef.current) stopListening();
+      setSttReady(false);
+      if (mountedRef.current) {
+        setTimeout(() => {
+          if (mountedRef.current) connectSTT();
+        }, 2000);
+      }
+    };
+
+    ws.onerror = () => {
+      ws.close();
     };
 
     worklet.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
@@ -109,120 +115,213 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
             type: "input_audio_chunk",
             audioBase64: toBase64(e.data),
             sampleRate: ctx.sampleRate,
-          })
+          }),
         );
       }
     };
 
     source.connect(worklet);
     worklet.connect(ctx.destination);
-    setIsListening(true);
-    setTranscript({ committed: "", partial: "" });
-  }, [stopListening]);
+  }, []);
 
-  const handleMicClick = useCallback(async () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    connectSTT();
+    return () => {
+      mountedRef.current = false;
+      workletRef.current?.disconnect();
+      sourceRef.current?.disconnect();
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      audioCtxRef.current?.close();
+      wsRef.current?.close();
+    };
+  }, [connectSTT]);
+
+  const onHoldStart = useCallback(() => {
     if (isProcessing) return;
+    captureStartRef.current = committedRef.current.length;
+    setIsHolding(true);
+  }, [isProcessing]);
 
-    if (isListening) {
-      stopListening();
-      const finalTranscript = committedRef.current.trim();
-      if (!finalTranscript) {
-        setStatus("No speech detected.");
-        return;
+  const onHoldEnd = useCallback(async () => {
+    if (!isHolding) return;
+    setIsHolding(false);
+
+    const newCommitted = committedRef.current.slice(captureStartRef.current);
+    const captured = (newCommitted + (partialRef.current ? " " + partialRef.current : "")).trim();
+
+    if (!captured) {
+      setStatus("No speech captured.");
+      setTimeout(() => setStatus(null), 2000);
+      return;
+    }
+
+    setIsProcessing(true);
+    setStatus("Asking sandbox…");
+
+    try {
+      const result = await runPrompt({ sandboxId, prompt: captured });
+
+      let message: string;
+      if ("success" in result && result.success) {
+        const parts = [
+          ...(result.written ?? []),
+          ...(result.deleted ?? []).map((f) => `${f} (deleted)`),
+        ];
+        message = parts.length
+          ? `Updated ${parts.length} file(s): ${parts.join(", ")}`
+          : "No files changed.";
+      } else {
+        message = `Error: ${"error" in result ? result.error : "Unknown error"}`;
       }
 
-      setIsProcessing(true);
-      setStatus("Asking sandbox…");
+      const iframe = document.getElementById("sandboxFrame") as HTMLIFrameElement | null;
+      if (iframe) iframe.src = iframe.src;
 
-      try {
-        const result = await runPrompt({
-          sandboxId,
-          prompt: finalTranscript,
-        });
-
-        let message: string;
-        if (result.success) {
-          const parts = [...(result.written ?? []), ...(result.deleted ?? []).map((f) => `${f} (deleted)`)];
-          message = parts.length
-            ? `Updated ${parts.length} file(s): ${parts.join(", ")}`
-            : "No files changed.";
-        } else {
-          message = `Error: ${result.error ?? "Unknown error"}`;
-        }
-
-        setStatus("Speaking…");
-        const ttsRes = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: message }),
-        });
-        if (!ttsRes.ok) {
-          setStatus("TTS failed.");
-          return;
-        }
+      setStatus("Speaking…");
+      const ttsRes = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: message }),
+      });
+      if (ttsRes.ok) {
         const blob = await ttsRes.blob();
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         audio.onended = () => URL.revokeObjectURL(url);
         await audio.play();
-        setStatus(null);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setStatus(`Error: ${message}`);
-        try {
-          const ttsRes = await fetch("/api/tts", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: `Error: ${message}` }),
-          });
-          if (ttsRes.ok) {
-            const blob = await ttsRes.blob();
-            const url = URL.createObjectURL(blob);
-            const audio = new Audio(url);
-            audio.onended = () => URL.revokeObjectURL(url);
-            await audio.play();
-          }
-        } catch (_) {}
-      } finally {
-        setIsProcessing(false);
       }
-    } else {
-      await startListening();
+      setStatus(null);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setStatus(`Error: ${errMsg}`);
+      try {
+        const ttsRes = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: `Error: ${errMsg}` }),
+        });
+        if (ttsRes.ok) {
+          const blob = await ttsRes.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.onended = () => URL.revokeObjectURL(url);
+          await audio.play();
+        }
+      } catch {}
+    } finally {
+      setIsProcessing(false);
     }
-  }, [isListening, isProcessing, sandboxId, startListening, stopListening]);
+  }, [isHolding, sandboxId]);
 
   const displayTranscript = transcript.committed + (transcript.partial ? ` ${transcript.partial}` : "");
 
+  useEffect(() => {
+    const el = transcriptBoxRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [transcript]);
+
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
-      {(status || displayTranscript) && (
-        <div className="max-w-sm rounded-lg border border-border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur">
-          {displayTranscript && (
-            <p className="text-muted-foreground">
-              {transcript.committed && <span>{transcript.committed}</span>}
-              {transcript.partial && (
-                <span className="italic text-muted-foreground/80"> {transcript.partial}</span>
-              )}
-              {isListening && <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-primary" />}
-            </p>
-          )}
-          {status && <p className="text-muted-foreground">{status}</p>}
+    <>
+      {isProcessing && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(11,13,17,.85)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 14,
+            zIndex: 40,
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            style={{
+              width: 28,
+              height: 28,
+              border: "3px solid #252a35",
+              borderTopColor: "#8187de",
+              borderRadius: "50%",
+              animation: "voice-spin .8s linear infinite",
+            }}
+          />
+          <p style={{ fontSize: 13, color: "#7a8194" }}>
+            {status === "Speaking…" ? "Speaking…" : "AI is updating your app…"}
+          </p>
+          <style>{`@keyframes voice-spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
-      <button
-        type="button"
-        onClick={handleMicClick}
-        disabled={isProcessing}
-        title={isListening ? "Release to send" : "Hold to speak"}
-        className={cn(
-          "flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 shadow-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50",
-          isListening
-            ? "border-red-500 bg-red-500/20 text-red-600 dark:text-red-400"
-            : "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
+        {!isProcessing && sttReady && (
+          <div
+            className="rounded-lg border border-border bg-background/95 shadow-lg backdrop-blur overflow-hidden transition-all"
+            style={{ width: 260 }}
+          >
+            <div
+              className="flex items-center justify-between px-3 py-1.5 border-b border-border cursor-pointer select-none"
+              onClick={() => setTranscriptMinimized((v) => !v)}
+            >
+              <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <span className="inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+                Transcript
+              </span>
+              {transcriptMinimized ? (
+                <Plus className="size-3 text-muted-foreground" />
+              ) : (
+                <Minus className="size-3 text-muted-foreground" />
+              )}
+            </div>
+            {!transcriptMinimized && (
+              <div
+                ref={transcriptBoxRef}
+                className="px-3 py-2 text-xs leading-relaxed text-muted-foreground overflow-y-auto"
+                style={{ maxHeight: 140 }}
+              >
+                {displayTranscript ? (
+                  <p>
+                    {transcript.committed && <span>{transcript.committed}</span>}
+                    {transcript.partial && (
+                      <span className="italic text-muted-foreground/80"> {transcript.partial}</span>
+                    )}
+                    <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-primary" />
+                  </p>
+                ) : (
+                  <p className="italic">Listening…</p>
+                )}
+              </div>
+            )}
+          </div>
         )}
-      >
-        <Mic className="size-6" strokeWidth={2} />
-      </button>
-    </div>
+        {!isProcessing && status && (
+          <div className="rounded-lg border border-border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur" style={{ width: 260 }}>
+            <p className="text-muted-foreground text-xs">{status}</p>
+          </div>
+        )}
+        <button
+          type="button"
+          onMouseDown={onHoldStart}
+          onMouseUp={onHoldEnd}
+          onMouseLeave={() => { if (isHolding) onHoldEnd(); }}
+          onTouchStart={onHoldStart}
+          onTouchEnd={onHoldEnd}
+          disabled={isProcessing || !sttReady}
+          title="Hold to capture voice for AI"
+          className={cn(
+            "flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 shadow-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50",
+            isHolding
+              ? "border-red-500 bg-red-500 text-white scale-110"
+              : sttReady
+                ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+                : "border-muted bg-muted text-muted-foreground",
+          )}
+        >
+          <Mic className="size-6" strokeWidth={2} />
+        </button>
+      </div>
+    </>
   );
 }

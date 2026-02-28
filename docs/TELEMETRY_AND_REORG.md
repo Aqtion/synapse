@@ -30,7 +30,7 @@ or `npm run dev:dashboard`, then open **http://localhost:3000/ux_telemetry**. Se
 
 ## Using telemetry in the beta-tester sandbox
 
-1. **Beta route in the same app** — Add a route (e.g. `/s/[sandboxId]`) that renders the sandbox and wraps it with `TelemetryProvider`; import from `@/ux_telemetry`.
+1. **Beta route in the same app** — Add a route (e.g. `/s/[sandboxId]`) that renders the sandbox and uses the `ux_telemetry` hooks (`useHumeStream`, `useMouseTracker`, `initPostHog`) to emit raw events with timestamps. Forward those events to your backend / Convex.
 2. **Worker-served page** — Build a client bundle from `dashboard/src/ux_telemetry` (and React) and load it in the HTML the Worker serves.
 3. **Separate tester app** — Copy or link `dashboard/src/ux_telemetry` into that app.
 

@@ -1,6 +1,6 @@
 # UX Telemetry (Aura11y)
 
-**Client-only** telemetry for the **beta-tester’s session** (Cloudflare sandbox). It runs in the **tester’s browser**, not in the dashboard or the Worker. The dashboard uses this module only for the **test page** (`/ux_telemetry`); the real consumer is the page or bundle that beta testers load.
+**Client-only** telemetry for the **beta-tester’s session** (Cloudflare sandbox). It runs in the **tester’s browser**, not in the dashboard or the Worker. The dashboard uses this module only for the **test page** (`/ux_telemetry`); the real consumer is the page or bundle that beta testers load. We do **not** run a live friction loop anymore; instead we log raw signals with timestamps and aggregate friction offline in Convex.
 
 - All code is `"use client"`; no server or dashboard-specific logic.
 - Single source of truth: this folder. Reuse it in the sandbox route or in a client bundle served to testers.
@@ -46,10 +46,10 @@ Then open **http://localhost:3000/ux_telemetry**. Set `NEXT_PUBLIC_HUME_API_KEY`
 Telemetry must run in the **page the tester has open** (browser), not in the Worker.
 
 1. **Beta route in the same app**  
-   Add a route (e.g. `/s/[sandboxId]` or `/test/[id]`) that renders the sandbox preview and wraps it with `TelemetryProvider` (when built). Import from `@/ux_telemetry`.
+   Add a route (e.g. `/s/[sandboxId]` or `/test/[id]`) that renders the sandbox preview and uses the hooks directly (`useHumeStream`, `useMouseTracker`, `initPostHog`). Send raw events (with timestamps) to your backend / Convex for storage and later analysis.
 
 2. **Worker-served static page**  
    Build a client bundle that includes this `ux_telemetry` code (and React if needed) and load it in the HTML the Worker serves. The Worker does not run the telemetry; the browser does.
 
 3. **Separate tester app**  
-   Copy or link `dashboard/src/ux_telemetry` into that app and use it there so beta sessions still get Hume + PostHog + mouse and `onFrictionDetected`.
+   Copy or link `dashboard/src/ux_telemetry` into that app and use it there so beta sessions still get Hume + PostHog + mouse. Compute friction scores offline from the stored events when you’re ready.
