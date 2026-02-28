@@ -2,6 +2,7 @@
  * AudioWorklet processor — runs in the audio rendering thread.
  * Converts float32 samples to PCM16 and posts them to the main thread
  * in 20ms batches (~320 samples at 16 kHz).
+ * (From ../dashboard/public/audio-processor.js)
  */
 class PCMProcessor extends AudioWorkletProcessor {
   constructor() {

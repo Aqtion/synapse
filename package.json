@@ -11,5 +11,11 @@
 		"dev:telemetry": "npm run dev:dashboard"
 	},
 	"author": "",
-	"license": "MIT"
+	"license": "MIT",
+	"dependencies": {
+		"supermemory": "^4.15.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0"
+	}
 }

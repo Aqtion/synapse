@@ -33,7 +33,7 @@ export function SandboxDashboard() {
       const id = await createSandboxMutation({ name: name.trim() });
       await ensureSandboxOnWorker({ sandboxId: id });
       setModalOpen(false);
-      router.push(`/s/${id}`);
+      // router.push(`/s/${id}`);
     } catch (err) {
       console.error("Create sandbox failed:", err);
       setCreating(false);
@@ -49,8 +49,6 @@ export function SandboxDashboard() {
   return (
     <>
       <div className="mx-auto max-w-[860px] px-6 py-12">
-        <SandboxHero onNewSandbox={() => setModalOpen(true)} />
-
         {showEmpty ? (
           <SandboxEmptyState />
         ) : (
