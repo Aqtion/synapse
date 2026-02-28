@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { SandboxVoice } from "@/components/sandbox/SandboxVoice";
+import { SandboxVoice } from "@/components/SandboxVoice";
 
 const WORKER_BASE_URL =
   typeof window !== "undefined"
