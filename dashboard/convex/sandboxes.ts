@@ -152,19 +152,12 @@ export const listSandboxes = query({
 export const getSandboxForCurrentUser = query({
   args: { sandboxId: v.string() },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
+    // Auth-based gating temporarily disabled to allow sandbox access without sign-in
     const row = await ctx.db
       .query("sandboxes")
       .filter((q) => q.eq(q.field("id"), args.sandboxId))
       .first();
-    if (!row) return null;
-    const email = (identity as { email?: string }).email?.toLowerCase();
-    const userId = (identity as { subject?: string }).subject ?? (identity as { userId?: string }).userId;
-    const matchesEmail = row.testerEmail && email && row.testerEmail.toLowerCase() === email;
-    const matchesUserId = row.testerUserId && userId && row.testerUserId === userId;
-    if (!matchesEmail && !matchesUserId) return null;
-    return row;
+    return row ?? null;
   },
 });
 
@@ -204,16 +197,17 @@ export const removeSandbox = mutation({
 export const ensureSandboxOnWorker = action({
   args: { sandboxId: v.string() },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("You must be signed in to open this sandbox");
-    }
-    const sandbox = await ctx.runQuery(api.sandboxes.getSandboxForCurrentUser, {
-      sandboxId: args.sandboxId,
-    });
-    if (!sandbox) {
-      throw new Error("You do not have access to this sandbox");
-    }
+    // Auth + ownership checks temporarily disabled so sandboxes can start without sign-in
+    // const identity = await ctx.auth.getUserIdentity();
+    // if (!identity) {
+    //   throw new Error("You must be signed in to open this sandbox");
+    // }
+    // const sandbox = await ctx.runQuery(api.sandboxes.getSandboxForCurrentUser, {
+    //   sandboxId: args.sandboxId,
+    // });
+    // if (!sandbox) {
+    //   throw new Error("You do not have access to this sandbox");
+    // }
     const base = process.env.WORKER_BASE_URL;
     if (!base) {
       throw new Error("WORKER_BASE_URL is not set in Convex environment");
