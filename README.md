@@ -1,92 +1,38 @@
-# Minimal Sandbox SDK Example
+## Synapse — Tech Stack & Architecture
 
-A minimal Cloudflare Worker that demonstrates the core capabilities of the Sandbox SDK.
+### Cloudflare
 
-## Features
+The core of Synapse runs entirely on Cloudflare's infrastructure:
 
-- **Command Execution**: Execute Python code in isolated containers
-- **File Operations**: Read and write files in the sandbox filesystem
-- **Simple API**: Two endpoints demonstrating basic sandbox operations
+- **Cloudflare Workers** — The serverless runtime powering all sandbox API logic: routing, file management, AI prompt handling, and serving the Studio UI. Every sandbox request — init, prompt, preview, export — is handled by a single Worker.
+- **Cloudflare Containers (Durable Objects + Containers API)** — Each sandbox is backed by a Cloudflare Container, a persistent, isolated execution environment tied to a Durable Object. This gives every sandbox its own filesystem, process lifecycle, and addressable URL, all managed at the edge. We use `@cloudflare/sandbox` and `@cloudflare/containers` to create, route to, and proxy requests into these containers.
+- **Wrangler CLI** — Used for local development (`wrangler dev --local`) and deployment (`wrangler deploy`), as well as managing Worker secrets like API keys.
 
-## How It Works
+### Supermemory
 
-This example provides two simple endpoints:
+- **Supermemory API** — Integrated directly into the Worker's `/api/prompt` endpoint as a long-term memory layer. Every time a user's prompt results in file changes, the diff (prompt + changed filenames) is stored in Supermemory tagged by sandbox ID using `ctx.waitUntil()` to ensure the write completes without blocking the response. Before each AI call, the Worker queries Supermemory with the current prompt to surface relevant past changes as additional context, enabling the AI to make more coherent, history-aware edits across sessions.
 
-1. **`/run`** - Executes Python code and returns the output
-2. **`/file`** - Creates a file, reads it back, and returns the contents
+### Convex
 
-## API Endpoints
+- **Convex** — Serverless backend-as-a-service handling all persistent application state: sandbox metadata, ownership, GitHub PR tracking (`prUrl`, `prNumber`, `githubRepo`). Convex actions power the `createPullRequest` flow — they fetch the live sandbox file contents from the Worker's `/api/export` endpoint, query Supermemory for the sandbox's change history to auto-generate a PR description, then call the GitHub API to create branches, commits, and pull requests programmatically.
 
-### Execute Python Code
+### Frontend
 
-```bash
-GET http://localhost:8787/run
+- **Next.js** — Dashboard for creating and managing sandboxes, with the Studio IDE embedded via iframe pointing at the Worker-served UI.
+
+### Architecture Summary
+
+```
+Browser (Next.js Dashboard)
+    │
+    ├── Convex (DB + Actions)
+    │       └── GitHub API (PR creation)
+    │       └── Supermemory API (change history search)
+    │
+    └── Cloudflare Worker (edge)
+            ├── Cloudflare Container / Durable Object (per-sandbox filesystem)
+            ├── Supermemory API (store + retrieve memory per sandbox)
+            └── Claude AI (code generation via prompt)
 ```
 
-Runs `python -c "print(2 + 2)"` and returns:
-
-```json
-{
-  "output": "4\n",
-  "success": true
-}
-```
-
-### File Operations
-
-```bash
-GET http://localhost:8787/file
-```
-
-Creates `/workspace/hello.txt`, reads it back, and returns:
-
-```json
-{
-  "content": "Hello, Sandbox!"
-}
-```
-
-## Setup
-
-1. From the project root, run:
-
-```bash
-npm install
-npm run build
-```
-
-2. Run locally:
-
-```bash
-cd examples/minimal # if you're not already here
-npm run dev
-```
-
-The first run will build the Docker container (2-3 minutes). Subsequent runs are much faster.
-
-## Testing
-
-```bash
-# Test command execution
-curl http://localhost:8787/run
-
-# Test file operations
-curl http://localhost:8787/file
-```
-
-## Deploy
-
-```bash
-npm run deploy
-```
-
-After first deployment, wait 2-3 minutes for container provisioning before making requests.
-
-## Next Steps
-
-This minimal example is the starting point for more complex applications. See the [Sandbox SDK documentation](https://developers.cloudflare.com/sandbox/) for:
-
-- Advanced command execution and streaming
-- Background processes
-- Preview URLs for exposed services
-- Custom Docker images
+Every sandbox is a live, isolated container at the edge with a persistent memory trail — Supermemory gives it a brain across sessions, and Convex + GitHub turns that history into an automated pull request.
