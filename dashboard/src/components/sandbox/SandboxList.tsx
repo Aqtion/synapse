@@ -48,6 +48,9 @@ export function SandboxList({ onOpenSandbox }: SandboxListProps) {
               name: sb.name,
               createdAt: sb.createdAt,
               lastOpenedAt: sb.lastOpenedAt,
+              prUrl: sb.prUrl ?? undefined,
+              prNumber: sb.prNumber ?? undefined,
+              githubRepo: sb.githubRepo ?? undefined,
             }}
             onOpen={handleOpen}
             onRemove={handleRemove}

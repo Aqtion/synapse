@@ -472,6 +472,75 @@ Rules:
 
 const APP_DIR = '/workspace/app';
 const SANDBOX_ID_RE = /^\/s\/([a-z0-9][a-z0-9-]{0,28}[a-z0-9]?)\//;
+const SUPERMEMORY_API = 'https://api.supermemory.ai/v3';
+
+function storeMemory(
+  apiKey: string,
+  sandboxId: string,
+  prompt: string,
+  written: string[],
+  deleted: string[],
+  changedFiles: Record<string, string>,
+): void {
+  let content = `PROMPT: ${prompt}\n`;
+  content += `FILES WRITTEN: ${written.length ? written.join(', ') : 'none'}\n`;
+  content += `FILES DELETED: ${deleted.length ? deleted.join(', ') : 'none'}\n`;
+  for (const name of written) {
+    const body = changedFiles[name];
+    if (body) content += `===FILE: ${name}===\n${body}\n`;
+  }
+
+  fetch(`${SUPERMEMORY_API}/documents`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      content,
+      containerTag: `sandbox_${sandboxId}`,
+      customId: `change_${sandboxId}_${Date.now()}`,
+      metadata: {
+        sandboxId,
+        filesWritten: written.length,
+        filesDeleted: deleted.length,
+        timestamp: Date.now(),
+      },
+    }),
+  }).catch(() => {});
+}
+
+async function searchMemories(
+  apiKey: string,
+  sandboxId: string,
+  query: string,
+): Promise<string> {
+  try {
+    const res = await fetch(`${SUPERMEMORY_API}/search`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        q: query,
+        containerTags: [`sandbox_${sandboxId}`],
+        limit: 3,
+      }),
+    });
+    if (!res.ok) return '';
+    const data = (await res.json()) as {
+      results?: Array<{ content?: string; memory?: string }>;
+    };
+    if (!data.results?.length) return '';
+    return data.results
+      .map((r) => r.memory || r.content || '')
+      .filter(Boolean)
+      .join('\n---\n');
+  } catch {
+    return '';
+  }
+}
 
 // ──────────────────────────────────────────────
 // Worker
@@ -541,20 +610,31 @@ export default {
         const sandbox = getSandbox(env.Sandbox, sandboxId);
         await sandbox.mkdir(APP_DIR, { recursive: true });
 
-        for (const [name, content] of Object.entries(STARTER_FILES)) {
-          await sandbox.writeFile(`${APP_DIR}/${name}`, content);
+        let existingFiles: string[] = [];
+        try {
+          const listing = await sandbox.listFiles(APP_DIR, { recursive: true });
+          existingFiles = listing.files
+            .filter((f: any) => f.type === 'file')
+            .map((f: any) => f.relativePath);
+        } catch { /* directory may not exist yet */ }
+
+        if (existingFiles.length === 0) {
+          for (const [name, content] of Object.entries(STARTER_FILES)) {
+            await sandbox.writeFile(`${APP_DIR}/${name}`, content);
+          }
+          existingFiles = Object.keys(STARTER_FILES);
         }
 
         // Start HTTP server in the background (non-blocking).
         // Our /preview/* route serves files directly so this isn't critical.
         try {
           const exposedPorts = await sandbox.getExposedPorts(hostname);
-          if (!exposedPorts.some((p) => p.port === 8080)) {
+          if (!exposedPorts.some((p: any) => p.port === 8080)) {
             await sandbox.startProcess('python3 -m http.server 8080', { cwd: APP_DIR });
           }
         } catch { /* best-effort */ }
 
-        return json({ status: 'ready', files: Object.keys(STARTER_FILES) });
+        return json({ status: 'ready', files: existingFiles });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return json({ error: msg }, { status: 500 });
@@ -599,8 +679,18 @@ export default {
           currentSnapshot += `===FILE: ${name}===\n${content}\n`;
         }
 
+        let memoryContext = '';
+        const smKey = (env as unknown as Record<string, unknown>).SUPERMEMORY_API_KEY as string | undefined;
+        if (smKey) {
+          memoryContext = await searchMemories(smKey, sandboxId, prompt);
+        }
+
+        const systemContent = memoryContext
+          ? `${SYSTEM_PROMPT}\n\nPREVIOUS CHANGES IN THIS SANDBOX (for context):\n${memoryContext}`
+          : SYSTEM_PROMPT;
+
         const messages: Array<{ role: string; content: string }> = [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemContent },
         ];
         if (history && history.length > 0) {
           for (const msg of history.slice(-4)) {
@@ -657,10 +747,37 @@ export default {
           .filter((f) => f.type === 'file')
           .map((f) => f.relativePath);
 
+        if (smKey) {
+          storeMemory(smKey, sandboxId, prompt, written, deleted, changedFiles);
+        }
+
         return json({ success: true, written, deleted, files: allFiles });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         return json({ error: msg }, { status: 500 });
+      }
+    }
+
+    // ── API: export all file contents ──
+    if (sub === 'api/export') {
+      try {
+        const sandbox = getSandbox(env.Sandbox, sandboxId);
+        const listing = await sandbox.listFiles(APP_DIR, { recursive: true });
+        const filePaths = listing.files
+          .filter((f) => f.type === 'file')
+          .map((f) => f.relativePath);
+
+        const fileMap: Record<string, string> = {};
+        await Promise.all(
+          filePaths.map(async (name) => {
+            const f = await sandbox.readFile(`${APP_DIR}/${name}`);
+            fileMap[name] = f.content;
+          }),
+        );
+
+        return json({ files: fileMap });
+      } catch {
+        return json({ files: {} });
       }
     }
 
