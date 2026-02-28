@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { CreateSandboxDialog, type TesterRow } from "./CreateSandboxDialog";
@@ -16,7 +16,7 @@ export function SandboxDashboard() {
   const [creating, setCreating] = useState(false);
 
   const sandboxes = useQuery(api.sandboxes.listSandboxes);
-  const inviteTestersMutation = useMutation(api.sandboxes.inviteTesters);
+  const inviteTestersAction = useAction(api.sandboxes.inviteTesters);
 
   const workerBase =
     typeof window !== "undefined"
@@ -28,7 +28,7 @@ export function SandboxDashboard() {
     if (testers.length === 0) return;
     setCreating(true);
     try {
-      await inviteTestersMutation({ testers });
+      await inviteTestersAction({ testers });
       setModalOpen(false);
     } catch (err) {
       console.error("Invite testers failed:", err);
