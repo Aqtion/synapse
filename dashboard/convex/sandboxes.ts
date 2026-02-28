@@ -98,7 +98,6 @@ export const inviteTesters = action({
             <div
               style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;background:#0b0d11;color:#e4e7ed;border-radius:12px">
               <div style="margin-bottom:24px; margin-left: -20px">
-                  <img src="https://raw.githubusercontent.com/Aqtion/synapse/main/dashboard/public/synapse.png" width="120" height="36" alt="Synapse" style="display:block" />
                   <span style="margin-left: -10px; font-weight:700;font-size:32px;vertical-align:top">Synapse</span>
               </div>
               <h1 style="font-size:22px;font-weight:600;margin:0 0 10px">Hey ${displayName}, you're invited!</h1>
