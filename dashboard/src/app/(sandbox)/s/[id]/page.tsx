@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAction, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
@@ -25,6 +25,17 @@ export default function SandboxPage() {
 
   const [workerReady, setWorkerReady] = useState(false);
   const [workerError, setWorkerError] = useState<string | null>(null);
+
+  const cachedSandboxRef = useRef<{ id: string; value: unknown } | null>(null);
+  if (sandbox !== undefined && id) {
+    cachedSandboxRef.current = { id, value: sandbox };
+  }
+  const resolvedSandbox =
+    sandbox !== undefined
+      ? sandbox
+      : id && cachedSandboxRef.current?.id === id
+        ? cachedSandboxRef.current.value
+        : undefined;
 
   useEffect(() => {
     if (!id || !sandbox || workerReady || workerError) return;
@@ -64,7 +75,7 @@ export default function SandboxPage() {
     );
   }
 
-  if (sandbox === undefined) {
+  if (resolvedSandbox === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground">
         <Loader2 className="size-8 animate-spin" aria-label="Loading" />
@@ -72,7 +83,7 @@ export default function SandboxPage() {
     );
   }
 
-  if (sandbox === null) {
+  if (resolvedSandbox === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground p-6">
         <p className="text-center">Access denied. This sandbox is not assigned to you.</p>
