@@ -88,3 +88,12 @@ function handleButtonPress() {
 Use the Convex CLI to push your functions to a deployment. See everything
 the Convex CLI can do by running `npx convex -h` in your project root
 directory. To learn more, launch the docs with `npx convex docs`.
+
+## Auth (Better Auth)
+
+For the `/api/auth/convex/token` endpoint to work (so the Next.js app can get a Convex JWT when the user is logged in), set these in the [Convex dashboard](https://dashboard.convex.dev) → your project → **Settings** → **Environment Variables**:
+
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `SITE_URL` | `http://localhost:3000` | App origin (must match where the app is served). |
+| `BETTER_AUTH_SECRET` | (random string) | Secret used to sign sessions; use a strong value in production. |
