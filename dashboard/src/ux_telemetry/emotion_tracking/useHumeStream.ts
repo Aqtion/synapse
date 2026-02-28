@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import {
-  HUME_VIDEO_CONSTRAINTS,
-  HUME_WS_BASE,
-} from "./constants";
+import { HUME_VIDEO_CONSTRAINTS, HUME_WS_BASE } from "./constants";
 import type {
   HumeEmotionMap,
   HumeStreamMessage,
@@ -14,12 +11,9 @@ import type {
 
 const DEFAULT_MAX_FPS = 2;
 
-/** Normalize Hume face response to a single emotion map (max scores across faces). */
 function emotionsFromMessage(msg: HumeStreamMessage): HumeEmotionMap {
-  const face = msg.face;
-  const predictions = face?.predictions;
+  const predictions = msg.face?.predictions;
   if (!Array.isArray(predictions)) return {};
-
   const out: HumeEmotionMap = {};
   for (const p of predictions) {
     if (!p?.emotions) continue;
@@ -33,13 +27,8 @@ function emotionsFromMessage(msg: HumeStreamMessage): HumeEmotionMap {
 }
 
 /**
- * useHumeStream — Hume AI Expression Measurement WebSocket + webcam integration.
- *
- * - Requests getUserMedia, feeds a hidden <video> (consumer must render and pass ref).
- * - Extracts frames at ≤ maxFps (default 2 FPS) via canvas → base64 JPEG.
- * - Opens WebSocket to Hume, sends config then frame payloads; parses emotion responses.
- *
- * API key: pass `apiKey` in options, or set NEXT_PUBLIC_HUME_API_KEY.
+ * Hume Expression Measurement WebSocket + webcam. For use in beta-tester
+ * sandbox or dashboard; runs in the browser (getUserMedia + WebSocket).
  */
 export function useHumeStream(
   options: UseHumeStreamOptions = {}
@@ -157,7 +146,10 @@ export function useHumeStream(
 
     setStatus("connecting");
 
-    const fps = Math.min(Math.max(maxFps > 0 ? maxFps : DEFAULT_MAX_FPS, 0.5), DEFAULT_MAX_FPS);
+    const fps = Math.min(
+      Math.max(maxFps > 0 ? maxFps : DEFAULT_MAX_FPS, 0.5),
+      DEFAULT_MAX_FPS
+    );
     const frameIntervalMs = Math.ceil(1000 / fps);
 
     const wsUrl = `${HUME_WS_BASE}?api_key=${encodeURIComponent(apiKey)}`;
@@ -179,44 +171,43 @@ export function useHumeStream(
       const canvas = document.createElement("canvas");
       canvasRef.current = canvas;
 
-      // Let the video paint a real frame before sending (avoids black first frames).
       const startSending = () => {
         intervalRef.current = setInterval(() => {
-        if (ws.readyState !== WebSocket.OPEN) return;
-        const v = videoRef.current;
-        if (!v || v.readyState < 2) return;
+          if (ws.readyState !== WebSocket.OPEN) return;
+          const v = videoRef.current;
+          if (!v || v.readyState < 2) return;
 
-        const w = v.videoWidth;
-        const h = v.videoHeight;
-        if (w === 0 || h === 0) return;
+          const w = v.videoWidth;
+          const h = v.videoHeight;
+          if (w === 0 || h === 0) return;
 
-        if (canvas.width !== w || canvas.height !== h) {
-          canvas.width = w;
-          canvas.height = h;
-        }
-
-        const ctx = canvas.getContext("2d", {
-          alpha: false,
-          desynchronized: true,
-        });
-        if (!ctx) return;
-
-        ctx.drawImage(v, 0, 0);
-        try {
-          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-          const base64 = dataUrl.split(",")[1];
-          if (base64) {
-            ws.send(
-              JSON.stringify({
-                models: { face: faceConfig },
-                data: base64,
-              })
-            );
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
           }
-        } catch {
-          /* skip frame on encode error */
-        }
-      }, frameIntervalMs);
+
+          const ctx = canvas.getContext("2d", {
+            alpha: false,
+            desynchronized: true,
+          });
+          if (!ctx) return;
+
+          ctx.drawImage(v, 0, 0);
+          try {
+            const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+            const base64 = dataUrl.split(",")[1];
+            if (base64) {
+              ws.send(
+                JSON.stringify({
+                  models: { face: faceConfig },
+                  data: base64,
+                })
+              );
+            }
+          } catch {
+            /* skip frame */
+          }
+        }, frameIntervalMs);
       };
       setTimeout(() => {
         if (ws.readyState === WebSocket.OPEN) startSending();
@@ -229,8 +220,13 @@ export function useHumeStream(
           typeof event.data === "string" ? event.data : ""
         );
         onRawMessage?.(raw);
-        if ("error" in raw && typeof (raw as { error?: string }).error === "string") {
-          const err = new Error(`Hume: ${(raw as { error?: string; code?: string }).error}`);
+        if (
+          "error" in raw &&
+          typeof (raw as { error?: string }).error === "string"
+        ) {
+          const err = new Error(
+            `Hume: ${(raw as { error?: string; code?: string }).error}`
+          );
           setError(err);
           onError?.(err);
           return;
@@ -240,7 +236,7 @@ export function useHumeStream(
           onMessage?.(emotions, raw);
         }
       } catch {
-        /* ignore parse errors */
+        /* ignore */
       }
     };
 

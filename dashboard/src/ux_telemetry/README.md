@@ -1,9 +1,25 @@
 # UX Telemetry (Aura11y)
 
-Client-only telemetry for **Aura11y**: Hume biometrics, PostHog behavioral, and mouse-context. Feeds friction events into the ElevenLabs Voice Copilot. All code is `"use client"`.
+Client-only telemetry for **Aura11y**. Runs in the **beta-tester’s browser** (e.g. Cloudflare sandbox or dashboard test pages). All code is `"use client"`; no server or dashboard-specific logic.
 
-- **Dashboard**: Used here for the **Hume test page** (`/ux_telemetry`) and will wrap the admin preview when needed.
-- **Cloudflare sandbox (beta users)**: When you add the beta-tester flow (e.g. a route or page that loads the sandbox + Sandpack), use this same module there so telemetry runs in the browser where the tester interacts.
+## Layout (modular)
+
+```
+ux_telemetry/
+  types.ts              # Shared: FrictionPayload
+  index.ts              # Barrel: re-exports from subfolders
+  emotion_tracking/      # Hume AI webcam stream
+    useHumeStream.ts
+    types.ts, constants.ts, index.ts
+  mouse_tracking/       # Cursor + element under cursor / nearest interactive
+    useMouseTracker.ts
+    types.ts, index.ts
+```
+
+- **emotion_tracking**: Hume Expression Measurement (getUserMedia + WebSocket, ≤2 FPS).
+- **mouse_tracking**: Throttled (100ms) `document.elementFromPoint`; returns both the exact element under the cursor and the **nearest interactive ancestor** (button, link, input, etc.) for “intent” when building `FrictionPayload.target_element_html`.
+- **Dashboard**: Use for the Hume test page (`/ux_telemetry`) and future TelemetryProvider.
+- **Cloudflare sandbox (beta users)**: Use this same module in the page/iframe the tester loads so telemetry runs in their browser.
 
 ## Running the Hume test
 

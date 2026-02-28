@@ -1,6 +1,6 @@
 "use client";
 
-import { useHumeStream } from "@/ux_telemetry";
+import { useHumeStream, useMouseTracker } from "@/ux_telemetry";
 import type { HumeEmotionMap, HumeStreamMessage } from "@/ux_telemetry";
 import { useCallback, useState } from "react";
 
@@ -55,6 +55,11 @@ export default function HumeStreamTestPage() {
     onMessage,
     onError: (e) => console.error("[Hume]", e),
     onRawMessage: setLastRaw,
+    enabled: true,
+  });
+
+  const { snapshot: mouseSnapshot } = useMouseTracker({
+    throttleMs: 100,
     enabled: true,
   });
 
@@ -144,6 +149,41 @@ export default function HumeStreamTestPage() {
           </details>
         )}
       </div>
+
+      <details className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-left">
+        <summary className="text-sm font-medium text-slate-50 cursor-pointer">
+          Mouse tracker (element under cursor + intent)
+        </summary>
+        <div className="mt-3 space-y-2 text-sm text-slate-300">
+          {mouseSnapshot ? (
+            <>
+              <p>
+                Position: ({mouseSnapshot.position.x}, {mouseSnapshot.position.y})
+              </p>
+              <p>
+                <span className="text-slate-400">Under cursor:</span>{" "}
+                {mouseSnapshot.elementUnderCursor?.tagName ?? "—"}{" "}
+                {mouseSnapshot.elementUnderCursor?.id
+                  ? `#${mouseSnapshot.elementUnderCursor.id}`
+                  : ""}
+              </p>
+              <p>
+                <span className="text-slate-400">Interactive (intent):</span>{" "}
+                {mouseSnapshot.interactiveElement?.tagName ?? "—"}{" "}
+                {mouseSnapshot.interactiveElement?.id
+                  ? `#${mouseSnapshot.interactiveElement.id}`
+                  : ""}
+              </p>
+              <p className="text-xs text-slate-500">
+                For FrictionPayload use interactive when you want &quot;what they
+                meant to click&quot;, or elementUnderCursor for exact pixel.
+              </p>
+            </>
+          ) : (
+            <p className="text-slate-500">Move the mouse to see snapshot.</p>
+          )}
+        </div>
+      </details>
     </div>
   );
 }
