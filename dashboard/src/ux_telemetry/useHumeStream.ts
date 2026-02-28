@@ -2,7 +2,6 @@
 
 import { useCallback, useRef, useState } from "react";
 import {
-  HUME_FRAME_INTERVAL_MS,
   HUME_VIDEO_CONSTRAINTS,
   HUME_WS_BASE,
 } from "./constants";
@@ -41,7 +40,6 @@ function emotionsFromMessage(msg: HumeStreamMessage): HumeEmotionMap {
  * - Opens WebSocket to Hume, sends config then frame payloads; parses emotion responses.
  *
  * API key: pass `apiKey` in options, or set NEXT_PUBLIC_HUME_API_KEY.
- * (Client-side key is required for direct browser→Hume WebSocket; for no client exposure use a proxy.)
  */
 export function useHumeStream(
   options: UseHumeStreamOptions = {}
@@ -171,6 +169,8 @@ export function useHumeStream(
     const faceConfig = {
       identify_faces: false,
       fps_pred: Math.min(maxFps, DEFAULT_MAX_FPS),
+      prob_threshold: 0.5,
+      min_face_size: 40,
     };
 
     ws.onopen = () => {
@@ -179,7 +179,9 @@ export function useHumeStream(
       const canvas = document.createElement("canvas");
       canvasRef.current = canvas;
 
-      intervalRef.current = setInterval(() => {
+      // Let the video paint a real frame before sending (avoids black first frames).
+      const startSending = () => {
+        intervalRef.current = setInterval(() => {
         if (ws.readyState !== WebSocket.OPEN) return;
         const v = videoRef.current;
         if (!v || v.readyState < 2) return;
@@ -204,7 +206,6 @@ export function useHumeStream(
           const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
           const base64 = dataUrl.split(",")[1];
           if (base64) {
-            // Hume requires models in every payload that includes data.
             ws.send(
               JSON.stringify({
                 models: { face: faceConfig },
@@ -216,6 +217,10 @@ export function useHumeStream(
           /* skip frame on encode error */
         }
       }, frameIntervalMs);
+      };
+      setTimeout(() => {
+        if (ws.readyState === WebSocket.OPEN) startSending();
+      }, 500);
     };
 
     ws.onmessage = (event: MessageEvent) => {
@@ -224,7 +229,6 @@ export function useHumeStream(
           typeof event.data === "string" ? event.data : ""
         );
         onRawMessage?.(raw);
-        // Surface server errors (models_error) so caller can log or show.
         if ("error" in raw && typeof (raw as { error?: string }).error === "string") {
           const err = new Error(`Hume: ${(raw as { error?: string; code?: string }).error}`);
           setError(err);
