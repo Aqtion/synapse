@@ -7,15 +7,11 @@
 const http = require("http");
 const next = require("next");
 const { WebSocketServer } = require("ws");
-const path = require("path");
-const dotenv = require("dotenv");
 
-// Load env for both Next routes and the WebSocket proxy.
-// Also load the monorepo root .env so ELEVENLABS_API_KEY is available.
-dotenv.config({ path: path.join(__dirname, "..", ".env") });
-dotenv.config({ path: path.join(__dirname, "..", ".env.local"), override: true });
-dotenv.config({ path: path.join(__dirname, ".env"), override: true });
-dotenv.config({ path: path.join(__dirname, ".env.local"), override: true });
+// Load env from dashboard root (Next.js loads .env.local automatically for its routes;
+// we need it for the WebSocket server too)
+require("dotenv").config({ path: ".env.local" });
+require("dotenv").config({ path: ".env" });
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = "localhost";
@@ -37,10 +33,6 @@ app.prepare().then(() => {
     return handle(req, res);
   });
 
-  // Next 16 exposes an upgrade handler we can delegate to for HMR, etc.
-  const upgradeHandler =
-    typeof app.getUpgradeHandler === "function" ? app.getUpgradeHandler() : null;
-
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (request, socket, head) => {
@@ -49,15 +41,9 @@ app.prepare().then(() => {
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit("connection", ws, request);
       });
-      return;
+    } else {
+      socket.destroy();
     }
-
-    // Let Next.js handle all other upgrade requests (webpack HMR, etc).
-    if (upgradeHandler) {
-      return upgradeHandler(request, socket, head);
-    }
-
-    socket.destroy();
   });
 
   wss.on("connection", (ws, request) => {
