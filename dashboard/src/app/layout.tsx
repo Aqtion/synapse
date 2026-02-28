@@ -47,6 +47,7 @@ export default function RootLayout({
                 <NavLink href="/">Overview</NavLink>
                 <NavLink href="/runs">Runs</NavLink>
                 <NavLink href="/files">Files</NavLink>
+                <NavLink href="/ux_telemetry">Telemetry (Hume test)</NavLink>
               </nav>
               <div className="mt-auto pt-6 text-[11px] text-slate-500">
                 Connected to existing Cloudflare Worker.
