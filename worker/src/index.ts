@@ -88,6 +88,40 @@ Rules:
 const APP_DIR = '/workspace/app';
 const SANDBOX_ID_RE = /^\/s\/([a-z0-9][a-z0-9-]{0,28}[a-z0-9]?)\//;
 const SUPERMEMORY_API = 'https://api.supermemory.ai/v3';
+const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
+
+const GEMINI_REFINE_SYSTEM_PROMPT = `You are a prompt refiner for a code-generation AI. You receive raw user input from voice (TTS) or chat.
+
+Your job: turn it into a single, clear, actionable instruction for a frontend web developer AI. Rules:
+- Remove filler words, hesitations, repetition, and off-topic phrases (e.g. "um", "like", "you know", "so basically").
+- Keep the request concise. One or two short sentences is enough.
+- Preserve the user's intent exactly. Do not add or remove features they asked for.
+- Output ONLY the refined instruction, no preamble, no quotes, no "The user wants..." — just the instruction.`;
+
+async function refinePromptWithGemini(apiKey: string, userPrompt: string): Promise<string> {
+  const trimmed = userPrompt.trim();
+  if (!trimmed) return trimmed;
+  try {
+    const url = `${GEMINI_API}/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: GEMINI_REFINE_SYSTEM_PROMPT }] },
+        contents: [{ role: 'user', parts: [{ text: trimmed }] }],
+        generationConfig: { maxOutputTokens: 256, temperature: 0.2 },
+      }),
+    });
+    if (!res.ok) return trimmed;
+    const data = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    return text || trimmed;
+  } catch {
+    return trimmed;
+  }
+}
 
 function storeMemory(
   apiKey: string,
@@ -274,13 +308,35 @@ export default {
       }
     }
 
+    // ── API: refine prompt (Gemini) ──
+    if (sub === 'api/refine' && request.method === 'POST') {
+      try {
+        const body = (await request.json()) as { prompt?: string };
+        const raw = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+        const geminiKey = (env as unknown as Record<string, unknown>).GEMINI_API_KEY as string | undefined;
+        const refined = geminiKey ? await refinePromptWithGemini(geminiKey, raw) : raw;
+        return json({ refinedPrompt: refined || raw });
+      } catch {
+        return json({ refinedPrompt: '' });
+      }
+    }
+
     // ── API: prompt ──
     if (sub === 'api/prompt' && request.method === 'POST') {
       try {
-        const { prompt, history } = (await request.json()) as {
+        const { prompt, history, refinedPrompt: bodyRefined } = (await request.json()) as {
           prompt: string;
           history?: Array<{ role: string; content: string }>;
+          refinedPrompt?: string;
         };
+
+        const geminiKey = (env as unknown as Record<string, unknown>).GEMINI_API_KEY as string | undefined;
+        const promptToUse =
+          typeof bodyRefined === 'string' && bodyRefined.length > 0
+            ? bodyRefined.trim()
+            : geminiKey
+              ? await refinePromptWithGemini(geminiKey, prompt)
+              : prompt;
 
         const sandbox = getSandbox(env.Sandbox, sandboxId);
 
@@ -301,7 +357,7 @@ export default {
         let memoryContext = '';
         const smKey = (env as unknown as Record<string, unknown>).SUPERMEMORY_API_KEY as string | undefined;
         if (smKey) {
-          memoryContext = await searchMemories(smKey, sandboxId, prompt);
+          memoryContext = await searchMemories(smKey, sandboxId, promptToUse);
         }
 
         const systemContent = memoryContext
@@ -318,7 +374,7 @@ export default {
         }
         messages.push({
           role: 'user',
-          content: `CURRENT FILES:\n\n${currentSnapshot}\nUSER REQUEST: ${prompt}`,
+          content: `CURRENT FILES:\n\n${currentSnapshot}\nUSER REQUEST: ${promptToUse}`,
         });
 
         let aiResponse;
@@ -373,10 +429,10 @@ export default {
           .map((f) => f.relativePath);
 
         if (smKey) {
-          ctx.waitUntil(storeMemory(smKey, sandboxId, prompt, written, deleted, changedFiles));
+          ctx.waitUntil(storeMemory(smKey, sandboxId, promptToUse, written, deleted, changedFiles));
         }
 
-        return json({ success: true, written, deleted, files: allFiles });
+        return json({ success: true, written, deleted, files: allFiles, refinedPrompt: promptToUse });
       } catch (error: unknown) {
         const msg = error instanceof Error
           ? `${error.constructor.name}: ${error.message}${error.stack ? '\n' + error.stack : ''}`

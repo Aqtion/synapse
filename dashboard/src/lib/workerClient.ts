@@ -80,6 +80,7 @@ export type PromptResponse =
       written: string[];
       deleted: string[];
       files: string[];
+      refinedPrompt?: string;
     }
   | {
       error: string;
@@ -89,13 +90,27 @@ export async function runPrompt(params: {
   sandboxId: string;
   prompt: string;
   history?: PromptHistoryEntry[];
+  refinedPrompt?: string;
 }): Promise<PromptResponse> {
   return callWorker<PromptResponse>(`/s/${params.sandboxId}/api/prompt`, {
     method: "POST",
     body: JSON.stringify({
       prompt: params.prompt,
       history: params.history,
+      ...(params.refinedPrompt !== undefined && { refinedPrompt: params.refinedPrompt }),
     }),
+  });
+}
+
+export type RefineResponse = { refinedPrompt: string };
+
+export async function refinePrompt(params: {
+  sandboxId: string;
+  prompt: string;
+}): Promise<RefineResponse> {
+  return callWorker<RefineResponse>(`/s/${params.sandboxId}/api/refine`, {
+    method: "POST",
+    body: JSON.stringify({ prompt: params.prompt }),
   });
 }
 

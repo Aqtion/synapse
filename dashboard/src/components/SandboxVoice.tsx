@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, Minus, Plus } from "lucide-react";
-import { runPrompt } from "@/lib/workerClient";
+import { refinePrompt, runPrompt } from "@/lib/workerClient";
 import { cn } from "@/lib/utils";
 
 const SAMPLE_RATE = 16000;
@@ -20,6 +20,7 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
   const [transcript, setTranscript] = useState({ committed: "", partial: "" });
   const [isHolding, setIsHolding] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [refinedPromptDisplay, setRefinedPromptDisplay] = useState<string | null>(null);
   const [transcriptMinimized, setTranscriptMinimized] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -157,10 +158,19 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
     }
 
     setIsProcessing(true);
-    setStatus("Asking sandbox…");
+    setStatus("Refining prompt…");
+    setRefinedPromptDisplay(null);
 
     try {
-      const result = await runPrompt({ sandboxId, prompt: captured });
+      const { refinedPrompt: refined } = await refinePrompt({ sandboxId, prompt: captured });
+      setRefinedPromptDisplay(refined);
+      setStatus("Asking sandbox…");
+
+      const result = await runPrompt({
+        sandboxId,
+        prompt: refined,
+        refinedPrompt: refined,
+      });
 
       let message: string;
       if ("success" in result && result.success) {
@@ -195,6 +205,7 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       setStatus(`Error: ${errMsg}`);
+      setRefinedPromptDisplay(null);
       try {
         const ttsRes = await fetch("/api/tts", {
           method: "POST",
@@ -211,6 +222,7 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
       } catch {}
     } finally {
       setIsProcessing(false);
+      setRefinedPromptDisplay(null);
     }
   }, [isHolding, sandboxId]);
 
@@ -251,6 +263,25 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
           <p style={{ fontSize: 13, color: "#7a8194" }}>
             {status === "Speaking…" ? "Speaking…" : "AI is updating your app…"}
           </p>
+          {refinedPromptDisplay && (
+            <div
+              style={{
+                maxWidth: "min(90vw, 420px)",
+                padding: "12px 16px",
+                background: "rgba(36, 23, 30, 0.9)",
+                border: "1px solid #252a35",
+                borderRadius: 12,
+                marginTop: 8,
+              }}
+            >
+              <p style={{ fontSize: 11, color: "#7a8194", marginBottom: 6 }}>
+                Refined prompt sent to AI:
+              </p>
+              <p style={{ fontSize: 13, color: "#e4e7ed", lineHeight: 1.45 }}>
+                {refinedPromptDisplay}
+              </p>
+            </div>
+          )}
           <style>{`@keyframes voice-spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
