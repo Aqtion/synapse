@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Sandbox Studio Dashboard",
-  description: "Dashboard for managing Cloudflare Sandbox sandboxes and runs.",
+  title: "Synapse",
+  description: "",
 };
 
 export default function RootLayout({
