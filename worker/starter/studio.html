@@ -447,20 +447,37 @@
 
       if (data) {
         const changedFiles = [...(data.written||[]), ...(data.deleted||[]).map(f => f+' (deleted)')];
+        const responseText = 'Updated ' + changedFiles.length + ' file(s): ' + changedFiles.join(', ');
         history.push({ role: 'assistant', content: 'Updated: ' + changedFiles.join(', ') });
         addMessage('Updated ' + changedFiles.length + ' file(s)', 'system', changedFiles);
         if (data.files) renderFileTabs(data.files);
         setStatus('active', 'Sandbox ready');
         reloadPreview();
         hideLoading();
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: 'SANDBOX_RESPONSE', text: responseText, success: true }, '*');
+        }
       } else {
-        addMessage('Error: ' + (lastErr ? lastErr.message : 'Unknown error'), 'error');
+        const errText = 'Error: ' + (lastErr ? lastErr.message : 'Unknown error');
+        addMessage(errText, 'error');
         setStatus('active', 'Sandbox ready');
         hideLoading();
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: 'SANDBOX_RESPONSE', text: errText, success: false }, '*');
+        }
       }
       generating = false;
       els.sendBtn.disabled = !els.promptInput.value.trim();
     }
+
+    window.addEventListener('message', function(event) {
+      if (event.data && event.data.type === 'VOICE_PROMPT' && event.data.text) {
+        els.promptInput.value = event.data.text;
+        els.sendBtn.disabled = false;
+        autoResize(els.promptInput);
+        sendPrompt();
+      }
+    });
 
     initSandbox();
   </script>

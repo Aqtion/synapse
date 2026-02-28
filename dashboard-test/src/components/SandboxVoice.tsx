@@ -124,6 +124,7 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
     worklet.connect(ctx.destination);
   }, []);
 
+  // Auto-start STT on mount
   useEffect(() => {
     mountedRef.current = true;
     connectSTT();
@@ -137,12 +138,14 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
     };
   }, [connectSTT]);
 
+  // Press: mark capture start
   const onHoldStart = useCallback(() => {
     if (isProcessing) return;
     captureStartRef.current = committedRef.current.length;
     setIsHolding(true);
   }, [isProcessing]);
 
+  // Release: grab captured segment and send to AI
   const onHoldEnd = useCallback(async () => {
     if (!isHolding) return;
     setIsHolding(false);
@@ -216,6 +219,7 @@ export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
 
   const displayTranscript = transcript.committed + (transcript.partial ? ` ${transcript.partial}` : "");
 
+  // Auto-scroll transcript box to bottom
   useEffect(() => {
     const el = transcriptBoxRef.current;
     if (el) el.scrollTop = el.scrollHeight;
