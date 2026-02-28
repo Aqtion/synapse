@@ -138,6 +138,23 @@ export const inviteTesters = action({
           now,
           projectId: args.projectId,
         });
+
+        // If the project has a GitHub repo, import it into the new sandbox
+        if (args.projectId) {
+          const project = await ctx.runQuery(internal.projects.getProjectById, {
+            projectId: args.projectId,
+          });
+          if (project?.githubRepo) {
+            try {
+              await ctx.runAction(api.sandboxes.importFromGitHub, {
+                sandboxId: id,
+                repoUrl: project.githubRepo,
+              });
+            } catch (e) {
+              console.error(`[inviteTesters] GitHub import failed for sandbox ${id}:`, e instanceof Error ? e.message : String(e));
+            }
+          }
+        }
       }
 
       const sandboxUrl = `${siteUrl}/s/${id}`;
@@ -197,9 +214,14 @@ export const inviteTesters = action({
 // ─────────────────────────────────────────────────────────────
 
 function parseGitHubUrl(url: string): { owner: string; repo: string } | null {
-  const m = url.trim().replace(/\.git$/, '').match(/github\.com\/([^/]+)\/([^/]+)/);
-  if (!m) return null;
-  return { owner: m[1], repo: m[2] };
+  const cleaned = url.trim().replace(/\.git$/, '');
+  // Full URL: https://github.com/owner/repo
+  const fullMatch = cleaned.match(/github\.com\/([^/]+)\/([^/]+)/);
+  if (fullMatch) return { owner: fullMatch[1], repo: fullMatch[2] };
+  // Short form: owner/repo
+  const shortMatch = cleaned.match(/^([^/\s]+)\/([^/\s]+)$/);
+  if (shortMatch) return { owner: shortMatch[1], repo: shortMatch[2] };
+  return null;
 }
 
 async function fetchGitHubFile(owner: string, repo: string, path: string, token?: string): Promise<string | null> {
@@ -412,11 +434,6 @@ export const importFromGitHub = action({
     // Build a single-page app with Babel standalone for JSX
     const generatedHtml = generateIndexHtml(repo, allSources, cssContent, deps, entryFile);
 
-    console.log(`[importFromGitHub] entryFile: ${entryFile}`);
-    console.log(`[importFromGitHub] allSources keys: ${Object.keys(allSources).join(', ')}`);
-    console.log(`[importFromGitHub] deps: ${JSON.stringify(deps)}`);
-    console.log(`[importFromGitHub] generated index.html (first 3000 chars):\n${generatedHtml.slice(0, 3000)}`);
-
     const outputFiles: Record<string, string> = { 'index.html': generatedHtml };
     if (cssContent) outputFiles['styles.css'] = cssContent;
 
@@ -434,7 +451,7 @@ export const importFromGitHub = action({
       throw new Error(`Upload failed (${uploadRes.status}): ${err || uploadRes.statusText}. Ensure WORKER_BASE_URL in Convex env points to your deployed worker (not localhost) and the worker is deployed with the latest code.`);
     }
 
-    return { ok: true, files: Object.keys(outputFiles), htmlPreview: generatedHtml.slice(0, 2000) };
+    return { ok: true, files: Object.keys(outputFiles) };
   },
 });
 
@@ -634,7 +651,8 @@ async function githubFetch(
 
 /**
  * Creates a GitHub PR with the current sandbox files.
- * Requires WORKER_BASE_URL, GITHUB_TOKEN, GITHUB_REPO, and optionally SUPERMEMORY_API_KEY
+ * The target repo is taken from the project the sandbox belongs to.
+ * Requires WORKER_BASE_URL, GITHUB_TOKEN, and optionally SUPERMEMORY_API_KEY
  * to be set in the Convex environment.
  */
 export const createPullRequest = action({
@@ -642,12 +660,27 @@ export const createPullRequest = action({
   handler: async (ctx, args) => {
     const workerBase = process.env.WORKER_BASE_URL;
     const githubToken = process.env.GITHUB_TOKEN;
-    const githubRepo = process.env.GITHUB_REPO;
     const smKey = process.env.SUPERMEMORY_API_KEY;
 
     if (!workerBase) throw new Error("WORKER_BASE_URL is not set");
     if (!githubToken) throw new Error("GITHUB_TOKEN is not set");
-    if (!githubRepo) throw new Error("GITHUB_REPO is not set (format: owner/repo)");
+
+    // Resolve the GitHub repo from the project the sandbox belongs to
+    const sandbox = await ctx.runQuery(api.sandboxes.getSandboxForCurrentUser, {
+      sandboxId: args.sandboxId,
+    });
+    if (!sandbox) throw new Error("Sandbox not found or access denied");
+
+    let githubRepo: string | undefined;
+    if (sandbox.projectId) {
+      const project = await ctx.runQuery(internal.projects.getProjectById, {
+        projectId: sandbox.projectId,
+      });
+      githubRepo = project?.githubRepo;
+    }
+    // Fall back to env var for backwards compatibility
+    githubRepo = githubRepo ?? process.env.GITHUB_REPO;
+    if (!githubRepo) throw new Error("No GitHub repo configured for this project. Set one when creating the project.");
 
     const exportUrl = `${workerBase.replace(/\/$/, "")}/s/${args.sandboxId}/api/export`;
     const exportRes = await fetch(exportUrl);

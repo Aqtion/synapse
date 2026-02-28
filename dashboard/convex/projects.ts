@@ -1,6 +1,16 @@
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
+
+export const getProjectById = internalQuery({
+  args: { projectId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("projects")
+      .filter((q) => q.eq(q.field("id"), args.projectId))
+      .first();
+  },
+});
 
 function makeProjectId(): string {
   return `proj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
