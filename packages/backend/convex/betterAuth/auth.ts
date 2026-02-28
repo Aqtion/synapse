@@ -55,6 +55,9 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
     };
   }
 
+  // For /api/auth/convex/token to return 200 (not 401): set in Convex dashboard (Settings → Environment Variables):
+  // - SITE_URL = your app URL (e.g. http://localhost:3000 in dev)
+  // - BETTER_AUTH_SECRET = a random secret (same value everywhere you run auth)
   return {
     appName: "My App",
     baseURL: process.env.SITE_URL || "http://localhost:3000",
