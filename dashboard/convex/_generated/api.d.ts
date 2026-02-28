@@ -13,6 +13,7 @@ import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as modal from "../modal.js";
 import type * as runs from "../runs.js";
+import type * as sandboxes from "../sandboxes.js";
 
 import type {
   ApiFromModules,
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   modal: typeof modal;
   runs: typeof runs;
+  sandboxes: typeof sandboxes;
 }>;
 
 /**

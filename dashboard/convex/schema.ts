@@ -9,5 +9,11 @@ export default defineSchema({
     success: v.boolean(),
     errorMessage: v.optional(v.string()),
   }),
+  sandboxes: defineTable({
+    id: v.string(),
+    name: v.string(),
+    createdAt: v.number(),
+    lastOpenedAt: v.number(),
+  }).index("by_lastOpenedAt", ["lastOpenedAt"]),
 });
 

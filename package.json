@@ -6,7 +6,7 @@
 	"description": "Monorepo containing the Cloudflare Sandbox Worker and dashboard app",
 	"scripts": {
 		"dev:worker": "cd worker && npm run dev",
-		"dev:dashboard": "cd dashboard && next dev",
+		"dev:dashboard": "cd dashboard && npm run dev",
 		"dev": "npm run dev:worker"
 	},
 	"author": "",
