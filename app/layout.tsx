@@ -35,7 +35,15 @@ export default async function RootLayout({
   const cookieStore = await cookies();
   const darkMode = cookieStore.get(DARK_MODE_COOKIE)?.value;
   const initialTheme = darkMode === "dark" ? "dark" : "light";
-  const initialToken = await getToken();
+  let initialToken: string | null = null;
+  const hasSessionCookie = cookieStore.getAll().some((c) => c.name.includes("session"));
+  if (hasSessionCookie) {
+    try {
+      initialToken = (await getToken()) ?? null;
+    } catch {
+      // 401 / connection error: render without auth
+    }
+  }
 
   return (
     <html lang="en" className={initialTheme === "dark" ? "dark" : ""} suppressHydrationWarning>
