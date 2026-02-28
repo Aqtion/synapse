@@ -295,8 +295,9 @@ export default function HumeStreamTestPage() {
           <p className="text-xs text-slate-500">
             Realtime behavioral signals are available via <code>onEventCaptured</code>{" "}
             (e.g. <code>$rageclick</code>, <code>$dead_click</code>,{" "}
-            <code>$autocapture</code>). We&apos;ll fold these into friction
-            scoring in the TelemetryProvider next.
+            <code>$autocapture</code>). In the real sandbox route, send these
+            events (with timestamps) to your backend / Convex for offline
+            analysis instead of reacting to them live.
           </p>
         </div>
       </details>
