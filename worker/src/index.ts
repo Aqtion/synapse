@@ -131,13 +131,24 @@ function storeMemory(
   deleted: string[],
   changedFiles: Record<string, string>,
 ): Promise<void> {
+  const MAX_FILE_CHARS = 2000;
   let content = `PROMPT: ${prompt}\n`;
   content += `FILES WRITTEN: ${written.length ? written.join(', ') : 'none'}\n`;
   content += `FILES DELETED: ${deleted.length ? deleted.join(', ') : 'none'}\n`;
   for (const name of written) {
     const body = changedFiles[name];
-    if (body) content += `===FILE: ${name}===\n${body}\n`;
+    if (body) {
+      const snippet = body.length > MAX_FILE_CHARS ? body.slice(0, MAX_FILE_CHARS) + '\n...(truncated)' : body;
+      content += `===FILE: ${name}===\n${snippet}\n`;
+    }
   }
+
+  // customId: alphanumeric + hyphens + underscores only, max 100 chars
+  const safeId = `chg_${sandboxId}_${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
+  const containerTag = `sandbox_${sandboxId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
+
+  const payload = { content, containerTag, customId: safeId };
+  console.log(`[storeMemory] sending — containerTag:${containerTag} customId:${safeId} contentLen:${content.length}`);
 
   return fetch(`${SUPERMEMORY_API}/documents`, {
     method: 'POST',
@@ -145,18 +156,14 @@ function storeMemory(
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      content,
-      containerTag: `sandbox_${sandboxId}`,
-      customId: `change_${sandboxId}_${Date.now()}`,
-      metadata: {
-        sandboxId,
-        filesWritten: written.length,
-        filesDeleted: deleted.length,
-        timestamp: Date.now(),
-      },
-    }),
-  }).then(() => { }).catch(() => { });
+    body: JSON.stringify(payload),
+  }).then(async (res) => {
+    const body = await res.text();
+    if (!res.ok) console.error(`[storeMemory] failed ${res.status}:`, body);
+    else console.log(`[storeMemory] ok ${res.status}:`, body.slice(0, 100));
+  }).catch((e) => {
+    console.error('[storeMemory] fetch error:', e instanceof Error ? e.message : String(e));
+  });
 }
 
 async function searchMemories(
@@ -173,17 +180,17 @@ async function searchMemories(
       },
       body: JSON.stringify({
         q: query,
-        containerTags: [`sandbox_${sandboxId}`],
+        containerTags: [`sandbox_${sandboxId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)],
         limit: 3,
       }),
     });
     if (!res.ok) return '';
     const data = (await res.json()) as {
-      results?: Array<{ content?: string; memory?: string }>;
+      results?: Array<{ chunks?: Array<{ content: string; isRelevant: boolean }> }>;
     };
     if (!data.results?.length) return '';
     return data.results
-      .map((r) => r.memory || r.content || '')
+      .flatMap((r) => (r.chunks ?? []).filter((c) => c.isRelevant).map((c) => c.content))
       .filter(Boolean)
       .join('\n---\n');
   } catch {

@@ -705,22 +705,24 @@ export const createPullRequest = action({
           },
           body: JSON.stringify({
             q: `all changes in sandbox ${args.sandboxId}`,
-            containerTags: [`sandbox_${args.sandboxId}`],
+            containerTags: [`sandbox_${args.sandboxId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100)],
             limit: 10,
           }),
         });
+        const rawBody = await searchRes.text();
+        console.log(`[createPR] supermemory search status: ${searchRes.status}, body: ${rawBody.slice(0, 500)}`);
         if (searchRes.ok) {
-          const data = (await searchRes.json()) as {
-            results?: Array<{ memory?: string; content?: string }>;
-          };
-          changeHistory =
-            data.results
-              ?.map((r) => r.memory || r.content || "")
-              .filter(Boolean)
-              .join("\n") || "";
+          const data = JSON.parse(rawBody) as Record<string, unknown>;
+          const results = (data.results ?? []) as Array<{ title?: string; createdAt?: string }>;
+          const titles = results
+            .sort((a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime())
+            .map((r) => r.title?.trim())
+            .filter(Boolean) as string[];
+          changeHistory = titles.length > 0 ? titles.map((t) => `- ${t}`).join("\n") : "";
+          console.log(`[createPR] changeHistory length: ${changeHistory.length}`);
         }
-      } catch {
-        /* best-effort */
+      } catch (e) {
+        console.error(`[createPR] supermemory search error:`, e instanceof Error ? e.message : String(e));
       }
     }
 
@@ -806,8 +808,8 @@ export const createPullRequest = action({
     }
 
     const prBody = changeHistory
-      ? `## Sandbox: ${args.sandboxId}\n\nAuto-generated from sandbox changes.\n\n### Change History\n\n${changeHistory}`
-      : `## Sandbox: ${args.sandboxId}\n\nAuto-generated from sandbox changes.`;
+      ? `## Changes\n\n${changeHistory}`
+      : `Auto-generated from sandbox ${args.sandboxId}.`;
 
     const prRes = await githubFetch(
       `/repos/${githubRepo}/pulls`,
@@ -852,6 +854,15 @@ export const createPullRequest = action({
         if (prs.length > 0) {
           prUrl = prs[0].html_url;
           prNumber = prs[0].number;
+          // Update the PR description with the latest change history
+          await githubFetch(
+            `/repos/${githubRepo}/pulls/${prNumber}`,
+            githubToken,
+            {
+              method: "PATCH",
+              body: JSON.stringify({ body: prBody }),
+            },
+          );
         } else {
           throw new Error(`Failed to create PR: ${prRes.status}`);
         }
