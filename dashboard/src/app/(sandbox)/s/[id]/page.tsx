@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import { SandboxVoice } from "@/components/sandbox/SandboxVoice";
 
 const WORKER_BASE_URL =
   typeof window !== "undefined"
@@ -34,10 +35,13 @@ export default function SandboxPage() {
   const iframeSrc = `${workerBase.replace(/\/$/, "")}/s/${id}/`;
 
   return (
-    <iframe
-      src={iframeSrc}
-      className="w-full h-screen border-0"
-      title={`Sandbox ${id}`}
-    />
+    <>
+      <iframe
+        src={iframeSrc}
+        className="w-full h-screen border-0"
+        title={`Sandbox ${id}`}
+      />
+      <SandboxVoice sandboxId={id} />
+    </>
   );
 }
