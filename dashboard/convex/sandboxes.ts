@@ -1,5 +1,5 @@
-import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
-import { internal } from "./_generated/api";
+import { action, internalMutation, mutation, query } from "./_generated/server";
+import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 
 function slugify(name: string): string {
@@ -12,7 +12,7 @@ function slugify(name: string): string {
 
 function makeId(name: string): string {
   const base = slugify(name);
-  const suffix = Math.random().toString(36).slice(2, 7);
+  const suffix = Math.random().toString(36).slice(2, 12);
   return `${base}-${suffix}`;
 }
 
@@ -32,6 +32,60 @@ export const createSandbox = mutation({
   },
 });
 
+export const inviteTesters = mutation({
+  args: {
+    testers: v.array(
+      v.object({
+        name: v.string(),
+        email: v.string(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const results: {
+      sandboxId: string;
+      email: string;
+      name: string;
+    }[] = [];
+
+    for (const tester of args.testers) {
+      const rawName = tester.name.trim();
+      const rawEmail = tester.email.trim().toLowerCase();
+
+      if (!rawEmail) {
+        continue;
+      }
+
+      const sandboxName = rawName || rawEmail;
+      const id = makeId(sandboxName);
+
+      await ctx.db.insert("sandboxes", {
+        id,
+        name: sandboxName,
+        testerEmail: rawEmail,
+        testerName: rawName || undefined,
+        createdAt: now,
+        lastOpenedAt: now,
+      });
+
+      // ! send beta invite email to rawEmail with sandbox link and password info
+      // The email should include:
+      // - Link: `${process.env.SITE_URL ?? "http://localhost:3000"}/s/${id}`
+      // - For new users: a generated password and instructions to sign in with email + password
+      // - For existing users: a note that their password has been previously set
+
+      results.push({
+        sandboxId: id,
+        email: rawEmail,
+        name: sandboxName,
+      });
+    }
+
+    return results;
+  },
+});
+
 export const listSandboxes = query({
   args: {},
   handler: async (ctx) => {
@@ -40,6 +94,29 @@ export const listSandboxes = query({
       .withIndex("by_lastOpenedAt")
       .order("desc")
       .collect();
+  },
+});
+
+/**
+ * Returns the sandbox for the given id only if the current user is the assigned tester.
+ * Used to gate /s/[id] so only that tester can load the sandbox.
+ */
+export const getSandboxForCurrentUser = query({
+  args: { sandboxId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const row = await ctx.db
+      .query("sandboxes")
+      .filter((q) => q.eq(q.field("id"), args.sandboxId))
+      .first();
+    if (!row) return null;
+    const email = (identity as { email?: string }).email?.toLowerCase();
+    const userId = (identity as { subject?: string }).subject ?? (identity as { userId?: string }).userId;
+    const matchesEmail = row.testerEmail && email && row.testerEmail.toLowerCase() === email;
+    const matchesUserId = row.testerUserId && userId && row.testerUserId === userId;
+    if (!matchesEmail && !matchesUserId) return null;
+    return row;
   },
 });
 
@@ -73,11 +150,22 @@ export const removeSandbox = mutation({
 
 /**
  * Calls the Cloudflare worker to initialize the sandbox (create files, start server).
+ * Only the assigned tester can start the sandbox; identity is verified before calling the worker.
  * Set WORKER_BASE_URL in Convex dashboard environment for this to work.
  */
 export const ensureSandboxOnWorker = action({
   args: { sandboxId: v.string() },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("You must be signed in to open this sandbox");
+    }
+    const sandbox = await ctx.runQuery(api.sandboxes.getSandboxForCurrentUser, {
+      sandboxId: args.sandboxId,
+    });
+    if (!sandbox) {
+      throw new Error("You do not have access to this sandbox");
+    }
     const base = process.env.WORKER_BASE_URL;
     if (!base) {
       throw new Error("WORKER_BASE_URL is not set in Convex environment");

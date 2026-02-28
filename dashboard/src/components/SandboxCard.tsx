@@ -60,7 +60,7 @@ export function SandboxCard({ sandbox, onOpen, onRemove }: SandboxCardProps) {
           onOpen(sandbox);
         }
       }}
-      className="group relative cursor-pointer transition-all hover:border-primary/50 hover:shadow-lg hover:-translate-y-0.5"
+      className="group relative cursor-pointer transition-all bg-card hover:border-primary/50 hover:shadow-lg"
     >
       <CardContent className="flex items-start justify-between gap-3 pt-5">
         <div className="min-w-0 flex flex-col gap-1">

@@ -1,54 +1,55 @@
 # UX Telemetry (Aura11y)
 
-Client-only telemetry for **Aura11y**. Runs in the **beta-tester’s browser** (e.g. Cloudflare sandbox or dashboard test pages). All code is `"use client"`; no server or dashboard-specific logic.
+**Client-only** telemetry for the **beta-tester’s session** (Cloudflare sandbox). It runs in the **tester’s browser**, not in the dashboard or the Worker. The dashboard uses this module only for the **test page** (`/ux_telemetry`); the real consumer is the page or bundle that beta testers load.
+
+- All code is `"use client"`; no server or dashboard-specific logic.
+- Single source of truth: this folder. Reuse it in the sandbox route or in a client bundle served to testers.
+
+---
 
 ## Layout (modular)
 
 ```
-ux_telemetry/
-  types.ts              # Shared: FrictionPayload
-  index.ts              # Barrel: re-exports from subfolders
-  emotion_tracking/      # Hume AI webcam stream
-    useHumeStream.ts
-    types.ts, constants.ts, index.ts
-  mouse_tracking/       # Cursor + element under cursor / nearest interactive
-    useMouseTracker.ts
-    types.ts, index.ts
+dashboard/src/ux_telemetry/
+  types.ts                 # Shared: FrictionPayload
+  index.ts                 # Barrel: re-exports from subfolders
+  emotion_tracking/        # Hume AI webcam stream
+    useHumeStream.ts, types.ts, constants.ts, index.ts
+  behavioral_tracking/     # PostHog analytics + session replay
+    posthog.ts, types.ts, index.ts
+  mouse_tracking/          # Cursor + element under cursor / intent (radius)
+    useMouseTracker.ts, types.ts, index.ts
 ```
 
-- **emotion_tracking**: Hume Expression Measurement (getUserMedia + WebSocket, ≤2 FPS).
-- **mouse_tracking**: Throttled (100ms) `document.elementFromPoint`; returns both the exact element under the cursor and the **nearest interactive ancestor** (button, link, input, etc.) for “intent” when building `FrictionPayload.target_element_html`.
-- **Dashboard**: Use for the Hume test page (`/ux_telemetry`) and future TelemetryProvider.
-- **Cloudflare sandbox (beta users)**: Use this same module in the page/iframe the tester loads so telemetry runs in their browser.
+| Subfolder | Purpose |
+|-----------|---------|
+| **emotion_tracking** | Hume Expression Measurement (getUserMedia + WebSocket, ≤2 FPS). |
+| **behavioral_tracking** | PostHog product analytics + session replay; realtime event hook via `_onCapture`. |
+| **mouse_tracking** | Throttled (100ms) cursor + `elementFromPoint`; intent via radius so “nearest interactive” works when cursor is near a control. |
 
-## Running the Hume test
+---
 
-From **repo root** (no Bun required):
+## Running the Hume test (dashboard only)
+
+From repo root:
 
 ```bash
 npm run dev:telemetry
 ```
 
-Or run the dashboard directly:
+Then open **http://localhost:3000/ux_telemetry**. Set `NEXT_PUBLIC_HUME_API_KEY` in `dashboard/.env.local`.
 
-```bash
-npm run dev:dashboard
-```
+---
 
-Then open **http://localhost:3000/ux_telemetry** (or the port Next shows). Set `NEXT_PUBLIC_HUME_API_KEY` in `dashboard/.env.local`.
+## Using in the beta-tester sandbox
 
-## Hume API key (Option A)
+Telemetry must run in the **page the tester has open** (browser), not in the Worker.
 
-Set `NEXT_PUBLIC_HUME_API_KEY` in `dashboard/.env.local`. The hook reads it automatically.
+1. **Beta route in the same app**  
+   Add a route (e.g. `/s/[sandboxId]` or `/test/[id]`) that renders the sandbox preview and wraps it with `TelemetryProvider` (when built). Import from `@/ux_telemetry`.
 
-## Using in a Cloudflare-served sandbox
+2. **Worker-served static page**  
+   Build a client bundle that includes this `ux_telemetry` code (and React if needed) and load it in the HTML the Worker serves. The Worker does not run the telemetry; the browser does.
 
-The telemetry runs in the **browser**. For beta users:
-
-1. **If the sandbox is an iframe** that loads a URL your app serves: serve that page from the dashboard (e.g. `/s/[sandboxId]` or `/test/[id]`) and wrap it with `TelemetryProvider` (when built). Same codebase, same `@/ux_telemetry`.
-
-2. **If the Worker serves static HTML/JS** that runs in the user’s browser: bundle the telemetry (e.g. build a small client bundle from this folder) and load it in that page. The Worker doesn’t run React; the browser does, so the bundle must include the hooks and any React runtime you use.
-
-3. **If the sandbox is a full Next.js or Vite app** deployed separately: copy or link `dashboard/src/ux_telemetry` into that app and use it there.
-
-Keep a single source of truth (this folder) and reuse it in every place that needs to capture Hume/PostHog/mouse in the user’s browser.
+3. **Separate tester app**  
+   Copy or link `dashboard/src/ux_telemetry` into that app and use it there so beta sessions still get Hume + PostHog + mouse and `onFrictionDetected`.

@@ -2,12 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CreateSandboxDialog } from "./CreateSandboxDialog";
+import { CreateSandboxDialog, type TesterRow } from "./CreateSandboxDialog";
 import { SandboxEmptyState } from "./SandboxEmptyState";
-import { SandboxHero } from "./SandboxHero";
 import { SandboxList } from "./SandboxList";
 import type { SandboxEntry } from "./SandboxCard";
 
@@ -17,8 +16,7 @@ export function SandboxDashboard() {
   const [creating, setCreating] = useState(false);
 
   const sandboxes = useQuery(api.sandboxes.listSandboxes);
-  const createSandboxMutation = useMutation(api.sandboxes.createSandbox);
-  const ensureSandboxOnWorker = useAction(api.sandboxes.ensureSandboxOnWorker);
+  const inviteTestersMutation = useMutation(api.sandboxes.inviteTesters);
 
   const workerBase =
     typeof window !== "undefined"
@@ -26,16 +24,14 @@ export function SandboxDashboard() {
       : "";
   const hasWorkerUrl = !!workerBase;
 
-  async function handleCreate(name: string) {
-    if (!name.trim()) return;
+  async function handleCreate(testers: TesterRow[]) {
+    if (testers.length === 0) return;
     setCreating(true);
     try {
-      const id = await createSandboxMutation({ name: name.trim() });
-      await ensureSandboxOnWorker({ sandboxId: id });
+      await inviteTestersMutation({ testers });
       setModalOpen(false);
-      // router.push(`/s/${id}`);
     } catch (err) {
-      console.error("Create sandbox failed:", err);
+      console.error("Invite testers failed:", err);
       setCreating(false);
     }
   }
@@ -50,9 +46,12 @@ export function SandboxDashboard() {
     <>
       <div className="mx-auto max-w-[860px] px-6 py-12">
         {showEmpty ? (
-          <SandboxEmptyState />
+          <SandboxEmptyState onInviteTesters={() => setModalOpen(true)} />
         ) : (
-          <SandboxList onOpenSandbox={handleOpenSandbox} />
+          <SandboxList
+            onOpenSandbox={handleOpenSandbox}
+            onInviteMoreTesters={() => setModalOpen(true)}
+          />
         )}
 
         {!hasWorkerUrl && (
@@ -62,7 +61,7 @@ export function SandboxDashboard() {
               <code className="font-mono text-destructive-foreground">
                 NEXT_PUBLIC_WORKER_BASE_URL
               </code>{" "}
-              so &quot;New Sandbox&quot; opens the studio on your Worker.
+              so inviting testers can open sandboxes on your Worker.
             </AlertDescription>
           </Alert>
         )}

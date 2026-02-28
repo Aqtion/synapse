@@ -2,14 +2,20 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
+import { Card, CardContent } from "@/components/ui/card";
+import { Plus } from "lucide-react";
 import type { SandboxEntry } from "./SandboxCard";
 import { SandboxCard } from "./SandboxCard";
 
 type SandboxListProps = {
   onOpenSandbox: (sandbox: SandboxEntry) => void;
+  onInviteMoreTesters?: () => void;
 };
 
-export function SandboxList({ onOpenSandbox }: SandboxListProps) {
+export function SandboxList({
+  onOpenSandbox,
+  onInviteMoreTesters,
+}: SandboxListProps) {
   const sandboxes = useQuery(api.sandboxes.listSandboxes);
   const updateLastOpened = useMutation(api.sandboxes.updateLastOpened);
   const removeSandbox = useMutation(api.sandboxes.removeSandbox);
@@ -56,6 +62,22 @@ export function SandboxList({ onOpenSandbox }: SandboxListProps) {
             onRemove={handleRemove}
           />
         ))}
+        {onInviteMoreTesters && (
+          <Card
+            role="button"
+            tabIndex={0}
+            className="border-dashed cursor-pointer transition-colors hover:border-primary/50 hover:bg-muted/30 flex min-h-[100px]"
+            onClick={onInviteMoreTesters}
+            onKeyDown={(e) =>
+              (e.key === "Enter" || e.key === " ") && onInviteMoreTesters()
+            }
+          >
+            <CardContent className="flex flex-1 items-center justify-center gap-2 text-muted-foreground hover:text-primary">
+              <Plus className="size-5" />
+              <span className="font-medium">Invite more testers</span>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

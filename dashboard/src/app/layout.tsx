@@ -4,6 +4,7 @@ import "./globals.css";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -16,9 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Synapse",
+  title: "Sandbox Studio Dashboard",
   description: "Dashboard for managing Cloudflare Sandbox sandboxes and runs.",
-  icons: { icon: "/synapse.svg" },
 };
 
 export default function RootLayout({
@@ -27,20 +27,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var t=localStorage.getItem("synapse-theme");var s=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";var r=(t==="light"||t==="dark")?t:s;document.documentElement.classList.toggle("dark",r==="dark");})();`,
-          }}
-        />
-      </head>
+    <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-950 text-slate-50`}
       >
-        <ThemeProvider initialTheme="dark">
+        <ThemeProvider initialTheme="light">
           <ConvexClientProvider>
-            <TooltipProvider>{children}</TooltipProvider>
+            <TooltipProvider>
+              <div className="min-h-screen w-full flex flex-col">{children}</div>
+              <Toaster />
+            </TooltipProvider>
           </ConvexClientProvider>
         </ThemeProvider>
       </body>

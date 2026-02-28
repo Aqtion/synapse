@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * UX Telemetry — modular client-only hooks for the beta-tester sandbox
- * (and dashboard test pages). No server or dashboard-specific code.
+ * UX Telemetry — client-only, for the beta-tester sandbox (runs in tester's browser).
+ * Dashboard uses this only for the test page (/ux_telemetry). No server or dashboard-specific code.
  *
  * - emotion_tracking: Hume AI webcam stream (useHumeStream)
- * - mouse_tracking: throttled cursor + element under cursor / nearest interactive (useMouseTracker)
+ * - mouse_tracking: throttled cursor + intent with radius (useMouseTracker)
+ * - behavioral_tracking: PostHog analytics + session replay (initPostHog)
  */
 
 export { useHumeStream } from "./emotion_tracking";
@@ -32,5 +33,15 @@ export type {
   UseMouseTrackerOptions,
   UseMouseTrackerReturn,
 } from "./mouse_tracking";
+
+export {
+  initPostHog,
+  isPostHogReady,
+  captureEvent,
+  getSessionReplayUrl,
+  getDistinctId,
+  isFrictionEvent,
+} from "./behavioral_tracking";
+export type { PostHogConfig, PostHogCapturedEvent, PostHogEventName } from "./behavioral_tracking";
 
 export type { FrictionPayload } from "./types";
