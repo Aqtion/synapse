@@ -10,7 +10,7 @@ import authConfig from "../auth.config";
 async function sendResendEmail(to: string, subject: string, html: string) {
   const key = process.env.RESEND_API_KEY;
   if (!key) {
-    console.warn("[Resend] RESEND_API_KEY not set in Convex env; skipping email. Set it in Convex dashboard (Settings → Environment Variables) to send verification/password-reset emails.");
+    // console.warn("[Resend] RESEND_API_KEY not set in Convex env; skipping email. Set it in Convex dashboard (Settings → Environment Variables) to send verification/password-reset emails.");
     return;
   }
   const res = await fetch("https://api.resend.com/emails", {
@@ -85,7 +85,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
     // Verification email is optional: we send it when RESEND_API_KEY is set, but never require it to sign in.
     emailVerification: {
       sendVerificationEmail: async (data) => {
-        console.log("[emailVerification] sendVerificationEmail called for:", data.user.email);
+        // console.log("[emailVerification] sendVerificationEmail called for:", data.user.email);
         try {
           await sendResendEmail(
             data.user.email,
@@ -108,7 +108,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
             </div>`,
           );
         } catch (e) {
-          console.warn("[emailVerification] Failed to send (optional):", e);
+          // console.warn("[emailVerification] Failed to send (optional):", e);
         }
       },
       sendOnSignUp: !!process.env.RESEND_API_KEY,

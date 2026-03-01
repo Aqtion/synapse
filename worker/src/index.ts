@@ -87,6 +87,58 @@ Rules:
 
 const APP_DIR = '/workspace/app';
 const SANDBOX_ID_RE = /^\/s\/([a-z0-9][a-z0-9-]{0,28}[a-z0-9]?)\//;
+
+/**
+ * Injected into preview HTML. Listens for POSTHOG_INIT (from studio) and POSTHOG_STOP (from parent).
+ * Also stops recording on this frame's pagehide/visibilitychange so the session ends when the user
+ * closes the tab or switches away, even if the parent's postMessage never arrives.
+ */
+const POSTHOG_LISTENER_SCRIPT = (function () {
+  const parts: string[] = [];
+  function add(s: string) {
+    parts.push(s);
+  }
+  add('(function(){');
+  add('window.__posthogPreviewReady=false;');
+  add('window.__posthogStopped=false;');
+  add('function stopAndFlush(){');
+  add('if(window.__posthogStopped)return;');
+  add('window.__posthogStopped=true;');
+  add('if(window.posthog){try{window.posthog.stopSessionRecording();}catch(e){}');
+  add('try{if(window.posthog.flush)window.posthog.flush();}catch(e){}}');
+  add('}');
+  add('window.addEventListener("message",function(e){');
+  add('var d=e.data;if(!d||!d.type)return;');
+  add('if(d.type==="POSTHOG_STOP"){stopAndFlush();return;}');
+  add('if(d.type==="POSTHOG_INIT"&&d.apiKey&&d.apiHost){');
+  add('if(window.__posthogPreviewReady)return;');
+  add('var apiHost=(d.apiHost||"https://us.i.posthog.com").replace(/\\/$/,"");');
+  add('var s=document.createElement("script");s.crossOrigin="anonymous";s.async=true;');
+  add('s.src=apiHost.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js";');
+  add('s.onload=function(){');
+  add('window.posthog.init(d.apiKey,{api_host:apiHost,person_profiles:"identified_only",session_recording:{maskAllInputs:true}});');
+  add('if(d.sandboxId)window.posthog.register({sandbox_id:d.sandboxId});');
+  add('window.__posthogPreviewReady=true;');
+  add('window.addEventListener("pagehide",stopAndFlush);');
+  add('document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")stopAndFlush();});');
+  add('};');
+  add('document.head.appendChild(s);');
+  add('}');
+  add('});');
+  add('})();');
+  return parts.join('');
+})();
+
+function injectPostHogIntoHtml(html: string): string {
+  const scriptTag = `<script>${POSTHOG_LISTENER_SCRIPT}</script>`;
+  if (html.includes('</head>')) {
+    return html.replace('</head>', `${scriptTag}\n</head>`);
+  }
+  if (html.includes('<body>')) {
+    return html.replace('<body>', `<body>\n${scriptTag}`);
+  }
+  return scriptTag + '\n' + html;
+}
 const SUPERMEMORY_API = 'https://api.supermemory.ai/v3';
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -163,7 +215,7 @@ function storeMemory(
   const containerTag = `sandbox_${sandboxId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
 
   const payload = { content: safeContent, containerTag, customId: safeId };
-  console.log(`[storeMemory] sending — containerTag:${containerTag} customId:${safeId} contentLen:${content.length}`);
+  // console.log(`[storeMemory] sending — containerTag:${containerTag} customId:${safeId} contentLen:${content.length}`);
 
   return fetch(`${SUPERMEMORY_API}/documents`, {
     method: 'POST',
@@ -174,10 +226,12 @@ function storeMemory(
     body: JSON.stringify(payload),
   }).then(async (res) => {
     const body = await res.text();
-    if (!res.ok) console.error(`[storeMemory] failed ${res.status}:`, body);
-    else console.log(`[storeMemory] ok ${res.status}:`, body.slice(0, 100));
+    // if (!res.ok) console.error(`[storeMemory] failed ${res.status}:`, body);
+    // else console.log(`[storeMemory] ok ${res.status}:`, body.slice(0, 100));
+    void body;
   }).catch((e) => {
-    console.error('[storeMemory] fetch error:', e instanceof Error ? e.message : String(e));
+    // console.error('[storeMemory] fetch error:', e instanceof Error ? e.message : String(e));
+    void e;
   });
 }
 
@@ -268,8 +322,11 @@ export default {
         if (filePath.endsWith('/')) filePath += 'index.html';
         const file = await sandbox.readFile(`${APP_DIR}/${filePath}`);
         const contentType = mimeFor(filePath);
-
-        return new Response(file.content, {
+        let body: string | Uint8Array = file.content;
+        if (filePath.endsWith('.html') && typeof file.content === 'string') {
+          body = injectPostHogIntoHtml(file.content);
+        }
+        return new Response(body, {
           headers: corsHeaders({ 'Content-Type': contentType }),
         });
       } catch {

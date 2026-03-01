@@ -74,6 +74,7 @@ export default defineSchema({
     timestampMs: v.number(),
     text: v.string(),
     isAiPrompt: v.boolean(),
+    fromMic: v.optional(v.boolean()),
   }).index("by_sandboxId", ["sandboxId"]),
 
   sandboxAnalyticsStats: defineTable({
@@ -83,8 +84,9 @@ export default defineSchema({
     lastUpdated: v.number(),
   }).index("by_sandboxId", ["sandboxId"]),
 
-  // Raw telemetry from sandbox sessions (Hume emotion, future: voice, PostHog, etc.).
-  // Join streams by sandboxId + sessionId + timestampMs.
+  // Raw telemetry from sandbox sessions (Hume emotion, voice, PostHog, etc.).
+  // Join streams by sandboxId + sessionId + timestampMs (prefer PostHog payload timestamp for accuracy).
+  // Future: persist PostHog session replay + product analytics here (source: "posthog", payload: session_id, sandbox_id, timestamps, replay URL, etc.).
   telemetrySamples: defineTable({
     sandboxId: v.string(),
     sessionId: v.string(),

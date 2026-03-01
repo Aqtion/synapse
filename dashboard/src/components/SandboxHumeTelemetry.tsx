@@ -10,7 +10,9 @@ import { cn } from "@/lib/utils";
 
 type SandboxHumeTelemetryProps = {
   sandboxId: string;
+  /** Optional session id for Convex telemetry writes. */
   sessionId?: string;
+  /** Called when emotion data is received (e.g. for UI or Convex write). */
   onEmotionSample?: (
     emotions: HumeEmotionMap,
     raw: HumeStreamMessage,
@@ -161,9 +163,10 @@ export function SandboxHumeTelemetry({
     onMessage,
     onRawMessage,
     onError: (e) => {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[SandboxHumeTelemetry]", e.message);
-      }
+      // if (process.env.NODE_ENV === "development") {
+      //   console.warn("[SandboxHumeTelemetry]", e.message);
+      // }
+      void e;
     },
     enabled: true,
     debug: process.env.NODE_ENV === "development",

@@ -199,7 +199,8 @@ export const inviteTesters = action({
         }),
       }).then(async (res) => {
         const body = await res.json();
-        console.log(`[Resend invite] ${rawEmail} →`, res.status, JSON.stringify(body));
+        // console.log(`[Resend invite] ${rawEmail} →`, res.status, JSON.stringify(body));
+        void body;
       });
 
       results.push({ sandboxId: id, email: rawEmail, name: sandboxName });
@@ -710,7 +711,7 @@ export const createPullRequest = action({
           }),
         });
         const rawBody = await searchRes.text();
-        console.log(`[createPR] supermemory search status: ${searchRes.status}, body: ${rawBody.slice(0, 500)}`);
+        // console.log(`[createPR] supermemory search status: ${searchRes.status}, body: ${rawBody.slice(0, 500)}`);
         if (searchRes.ok) {
           const data = JSON.parse(rawBody) as Record<string, unknown>;
           const results = (data.results ?? []) as Array<{ title?: string; createdAt?: string }>;
@@ -719,10 +720,11 @@ export const createPullRequest = action({
             .map((r) => r.title?.trim())
             .filter(Boolean) as string[];
           changeHistory = titles.length > 0 ? titles.map((t) => `- ${t}`).join("\n") : "";
-          console.log(`[createPR] changeHistory length: ${changeHistory.length}`);
+          // console.log(`[createPR] changeHistory length: ${changeHistory.length}`);
         }
       } catch (e) {
-        console.error(`[createPR] supermemory search error:`, e instanceof Error ? e.message : String(e));
+        // console.error(`[createPR] supermemory search error:`, e instanceof Error ? e.message : String(e));
+        void e;
       }
     }
 

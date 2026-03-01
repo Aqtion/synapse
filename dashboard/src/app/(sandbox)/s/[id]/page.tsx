@@ -9,7 +9,7 @@ import {
   SandboxHumeTelemetry,
   emotionToDotColor,
 } from "@/components/SandboxHumeTelemetry";
-import { useSandboxPostHogOnLoad } from "@/components/SandboxPostHogTelemetry";
+import { useSandboxPostHogOnLoad, endPostHogSession } from "@/components/SandboxPostHogTelemetry";
 import { Loader2 } from "lucide-react";
 import type { HumeEmotionMap } from "@/ux_telemetry";
 
@@ -27,16 +27,6 @@ const WORKER_BASE_URL =
   typeof window !== "undefined"
     ? process.env.NEXT_PUBLIC_WORKER_BASE_URL
     : undefined;
-const SANDBOX_FRAME_ID = "sandboxFrame";
-
-function sendPostHogStop() {
-  try {
-    const frame = document.getElementById(SANDBOX_FRAME_ID) as HTMLIFrameElement | null;
-    if (frame?.contentWindow) frame.contentWindow.postMessage({ type: "POSTHOG_STOP" }, "*");
-  } catch {
-    // ignore
-  }
-}
 
 export default function SandboxPage() {
   const params = useParams();
@@ -69,23 +59,22 @@ export default function SandboxPage() {
         ? cachedSandboxRef.current.value
         : undefined;
 
-  // Stop PostHog recording when tab is hidden (switch tab) or when component unmounts (navigate away).
+  // Stop PostHog recording when tab is hidden, tab is closed, or component unmounts.
   useEffect(() => {
     if (typeof window === "undefined" || !id) return;
     const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") sendPostHogStop();
+      if (document.visibilityState === "hidden") endPostHogSession("visibilitychange");
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      sendPostHogStop();
+      endPostHogSession("unmount");
     };
   }, [id]);
 
-  // When user closes the tab, send STOP so the iframe can end the session before the tab is destroyed.
   useEffect(() => {
     if (typeof window === "undefined" || !id) return;
-    const onPageHide = () => sendPostHogStop();
+    const onPageHide = () => endPostHogSession("pagehide");
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
   }, [id]);

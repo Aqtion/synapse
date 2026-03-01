@@ -92,9 +92,15 @@ export default function DebugPostHogPage() {
           <li>Copy <strong>Summary</strong> + <strong>Verification (newest recording)</strong> and paste here.</li>
           <li>In PostHog: Session Replay → newest recording → copy <strong>Start, Duration, Entry URL</strong> (and any errors) and paste here.</li>
         </ol>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground mb-3">
           Expect: <strong>is_preview_frame: Yes</strong> (preview only), <strong>session_has_end_time: Yes</strong>, duration ≈ time you spent (not 83 min). Session should stop on tab close / navigate / tab hidden.
         </p>
+        <p className="text-xs font-medium text-foreground mb-1">What to paste for debugging (if it still fails):</p>
+        <ol className="text-xs list-decimal list-inside space-y-1 text-muted-foreground">
+          <li>In the sandbox tab console, run <code className="bg-muted px-1 rounded">window.__POSTHOG_DEBUG__ = true</code> (or open from dashboard so dev mode logs).</li>
+          <li>Reproduce: open sandbox → use preview ~1 min → close tab or switch away.</li>
+          <li>Paste (1) any console lines containing <code className="bg-muted px-1 rounded">[PostHog]</code>, (2) this page’s <strong>Summary</strong> + <strong>Verification</strong> block, (3) from PostHog Session Replay: newest recording’s Start time, Duration, Entry URL, and whether it shows &quot;ongoing&quot;.</li>
+        </ol>
         {result?.deploy_hint && (
           <p className="text-sm text-amber-600 dark:text-amber-400 mt-3 font-medium">
             {result.deploy_hint}
