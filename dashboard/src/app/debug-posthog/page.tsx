@@ -93,14 +93,23 @@ export default function DebugPostHogPage() {
           <li>In PostHog: Session Replay → newest recording → copy <strong>Start, Duration, Entry URL</strong> (and any errors) and paste here.</li>
         </ol>
         <p className="text-xs text-muted-foreground mb-3">
-          Expect: <strong>is_preview_frame: Yes</strong> (preview only), <strong>session_has_end_time: Yes</strong>, <strong>ongoing: No</strong>, duration ≈ time you spent. Session stops on tab close / navigate / tab hidden. The replay video in the portal can take a few minutes to appear after the session ends (PostHog processing).
+          Expect: <strong>is_preview_frame: Yes</strong> (preview only), <strong>session_has_end_time: Yes</strong>, <strong>ongoing: No</strong>, duration ≈ time you spent. Session stops on tab close / navigate / tab hidden. Replay can take a few minutes to appear after the session ends.
         </p>
-        <p className="text-xs font-medium text-foreground mb-1">What to paste for debugging (if it still fails):</p>
-        <ol className="text-xs list-decimal list-inside space-y-1 text-muted-foreground">
-          <li>In the sandbox tab console, run <code className="bg-muted px-1 rounded">window.__POSTHOG_DEBUG__ = true</code> (or open from dashboard so dev mode logs).</li>
-          <li>Reproduce: open sandbox → use preview ~1 min → close tab or switch away.</li>
-          <li>Paste (1) any console lines containing <code className="bg-muted px-1 rounded">[PostHog]</code>, (2) this page’s <strong>Summary</strong> + <strong>Verification</strong> block, (3) from PostHog Session Replay: newest recording’s Start time, Duration, Entry URL, and whether it shows &quot;ongoing&quot;.</li>
+        <p className="text-xs text-muted-foreground mb-3">
+          If <strong>no new recording</strong> or <strong>replay never appears</strong>: (1) In PostHog go to <strong>Project settings → Session Replay</strong>. If your project has &quot;Authorized domains&quot; or &quot;URL trigger&quot; set, add your worker domain (e.g. <code className="bg-muted px-1 rounded">my-sandbox.xxx.workers.dev</code>) so recordings from the preview iframe are allowed. (2) Open DevTools on the <strong>sandbox tab</strong>, switch to the preview iframe context if possible, and check the Console for errors about <code className="bg-muted px-1 rounded">recorder.js</code> or CSP blocking PostHog.
+        </p>
+        <p className="text-xs font-medium text-foreground mb-2 mt-3">Copy-paste debug bundle (when it still fails):</p>
+        <ol className="text-xs list-decimal list-inside space-y-1 text-muted-foreground mb-2">
+          <li>Redeploy the worker so the preview has the latest script: <code className="bg-muted px-1 rounded">cd worker && npm run deploy</code> (or wrangler deploy). Hard-refresh the sandbox page (Ctrl+Shift+R).</li>
+          <li>In the <strong>sandbox tab</strong> (dashboard), open DevTools → Console. Run <code className="bg-muted px-1 rounded">window.__POSTHOG_DEBUG__ = true</code>.</li>
+          <li>Open a sandbox, wait for the preview to load, use the preview 1–2 min (click a few links), then navigate away or close the tab.</li>
+          <li>Open this debug page, click <strong>Refresh</strong>. Copy the whole <strong>Summary</strong> block and the whole <strong>Verification (newest recording)</strong> block below.</li>
+          <li>Optional: In DevTools → Network, filter by <code className="bg-muted px-1 rounded">posthog</code> or <code className="bg-muted px-1 rounded">batch</code>. After using the preview, do you see requests to PostHog? Note Yes/No.</li>
+          <li>In PostHog app: Session Replay → list. Note the newest recording’s Start time, Duration, Entry URL, and whether it says &quot;ongoing&quot;. If you can switch to the preview iframe context in Console, note any errors about <code className="bg-muted px-1 rounded">recorder.js</code> or CSP.</li>
         </ol>
+        <p className="text-xs text-muted-foreground">
+          Paste back: (1) Console lines containing <code className="bg-muted px-1 rounded">[PostHog]</code>, (2) Summary + Verification from this page, (3) PostHog Network Yes/No, (4) Newest recording details from PostHog portal, (5) Any preview iframe console errors.
+        </p>
         {result?.deploy_hint && (
           <p className="text-sm text-amber-600 dark:text-amber-400 mt-3 font-medium">
             {result.deploy_hint}

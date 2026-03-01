@@ -77,7 +77,7 @@ export async function GET() {
 
     const [propsRes, recordingsRes, eventDefsRes] = await Promise.all([
       fetch(`${base}/api/projects/${projectIdStr}/property_definitions/?limit=200`, { headers }),
-      fetch(`${base}/api/projects/${projectIdStr}/session_recordings/?limit=10`, { headers }),
+      fetch(`${base}/api/projects/${projectIdStr}/session_recordings/?limit=20`, { headers }),
       fetch(`${base}/api/projects/${projectIdStr}/event_definitions/?limit=100`, { headers }),
     ]);
 
