@@ -133,17 +133,9 @@ function storeMemory(
   deleted: string[],
   changedFiles: Record<string, string>,
 ): Promise<void> {
-  const MAX_FILE_CHARS = 2000;
-  let content = `PROMPT: ${prompt}\n`;
-  content += `FILES WRITTEN: ${written.length ? written.join(', ') : 'none'}\n`;
-  content += `FILES DELETED: ${deleted.length ? deleted.join(', ') : 'none'}\n`;
-  for (const name of written) {
-    const body = changedFiles[name];
-    if (body) {
-      const snippet = body.length > MAX_FILE_CHARS ? body.slice(0, MAX_FILE_CHARS) + '\n...(truncated)' : body;
-      content += `===FILE: ${name}===\n${snippet}\n`;
-    }
-  }
+  let content = `Request: ${prompt}\n`;
+  content += `Files written: ${written.length ? written.join(', ') : 'none'}\n`;
+  content += `Files deleted: ${deleted.length ? deleted.join(', ') : 'none'}\n`;
 
   // customId: alphanumeric + hyphens + underscores only, max 100 chars
   const safeId = `chg_${sandboxId}_${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
