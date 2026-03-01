@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 
 const projects = [
-  { title: 'Weather Dashboard', tag: 'React', desc: 'Real-time weather data with animated charts and a 7-day forecast.' },
-  { title: 'Task Manager', tag: 'TypeScript', desc: 'Drag-and-drop kanban board with local persistence and dark mode.' },
-  { title: 'Markdown Editor', tag: 'UI', desc: 'Split-pane live preview editor with syntax highlighting and export.' },
+  { title: 'Weather Dashboard', tags: ['React'], desc: 'Real-time weather data with animated charts and a 7-day forecast.' },
+  { title: 'Task Manager', tags: ['React', 'Node.js', 'CSS', 'TypeScript'], desc: 'Drag-and-drop kanban board with local persistence and dark mode.' },
+  { title: 'Markdown Editor', tags: ['UI'], desc: 'Split-pane live preview editor with syntax highlighting and export.' },
 ];
 
 const skills = ['React', 'TypeScript', 'Node.js', 'CSS', 'REST APIs', 'Git'];
@@ -71,7 +71,11 @@ export default function App() {
               {projects.map((p) => (
                 <div key={p.title} className="card">
                   <div className="card-top">
-                    <span className="card-tag">{p.tag}</span>
+                    <div className="card-tags">
+                      {p.tags.map((tag) => (
+                        <span key={tag} className="card-tag">{tag}</span>
+                      ))}
+                    </div>
                   </div>
                   <h3 className="card-title">{p.title}</h3>
                   <p className="card-desc">{p.desc}</p>
