@@ -10,6 +10,7 @@
 
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
+import type * as emotionCategories from "../emotionCategories.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as modal from "../modal.js";
@@ -28,6 +29,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   auth: typeof auth;
+  emotionCategories: typeof emotionCategories;
   health: typeof health;
   http: typeof http;
   modal: typeof modal;

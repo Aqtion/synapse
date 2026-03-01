@@ -58,16 +58,6 @@ export default defineSchema({
     supermemorySummary: v.optional(v.string()),
   }).index("by_sandboxId", ["sandboxId"]),
 
-  sandboxEmotionSamples: defineTable({
-    sandboxId: v.string(),
-    sessionId: v.optional(v.string()),
-    timestampMs: v.number(),
-    lowEnergyUnpleasant: v.number(),
-    lowEnergyPleasant: v.number(),
-    highEnergyPleasant: v.number(),
-    highEnergyUnpleasant: v.number(),
-  }).index("by_sandboxId", ["sandboxId"]),
-
   sandboxTranscriptEntries: defineTable({
     sandboxId: v.string(),
     sessionId: v.optional(v.string()),

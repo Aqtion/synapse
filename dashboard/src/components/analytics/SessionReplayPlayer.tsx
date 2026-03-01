@@ -29,7 +29,7 @@ function postToReplayIframe(
   }
 }
 
-type ReplayControlsOverlayProps = {
+export type ReplayControlsOverlayProps = {
   isPlaying: boolean;
   playbackRate: number;
   onPlayPauseToggle: () => void;
@@ -38,7 +38,7 @@ type ReplayControlsOverlayProps = {
   onPlaybackRateCycle: () => void;
 };
 
-function ReplayControlsOverlay({
+export function ReplayControlsOverlay({
   isPlaying,
   playbackRate,
   onPlayPauseToggle,
@@ -49,7 +49,7 @@ function ReplayControlsOverlay({
   return (
     <>
       <div
-        className="absolute inset-0 flex items-end justify-center pb-4 transition-opacity duration-200 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+        className="absolute inset-0 flex items-end justify-center pb-4 transition-opacity duration-200 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-20"
       >
         <div className="flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 pointer-events-auto">
           <button

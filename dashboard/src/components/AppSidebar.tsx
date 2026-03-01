@@ -476,56 +476,53 @@ export function AppSidebar({ userId }: AppSidebarProps) {
         )}
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border">
-        <div className="flex justify-end pb-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-8"
-            onClick={toggleTheme}
-            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {theme === "dark" ? (
-              <Sun className="size-4" />
-            ) : (
-              <Moon className="size-4" />
-            )}
-          </Button>
-        </div>
-        <div className="border-t border-sidebar-border pt-2 flex flex-col gap-1">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <Link href={`/${userId}/user`} className="flex items-center gap-2">
-                  <Avatar className="size-6 shrink-0">
-                    <AvatarFallback className="text-xs">
-                      {getInitials(user?.name, user?.email)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="truncate">Profile</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={toggleTheme}
+              tooltip={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? (
+                <Sun className="size-4" />
+              ) : (
+                <Moon className="size-4" />
+              )}
+              <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild>
+              <Link href={`/${userId}/user`} className="flex items-center gap-2">
+                <Avatar className="size-6 shrink-0">
+                  <AvatarFallback className="text-xs">
+                    {getInitials(user?.name, user?.email)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="truncate">Profile</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+            >
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="flex items-start justify-start text-left w-full gap-2 text-foreground hover:bg-foreground/10"
+                aria-label="Sign out"
+                onClick={async () => {
+                  await authClient.signOut();
+                  router.push("/");
+                }}
               >
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="flex items-start justify-start text-left w-full gap-2 text-foreground hover:bg-foreground/10"
-                  aria-label="Sign out"
-                  onClick={async () => {
-                    await authClient.signOut();
-                    router.push("/");
-                  }}
-                >
-                  <LogOut className="size-4" />
-                  <span>Sign out</span>
-                </Button>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </div>
+                <LogOut className="size-4" />
+                <span>Sign out</span>
+              </Button>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
 
       {activeProject && (
