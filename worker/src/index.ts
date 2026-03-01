@@ -133,15 +133,32 @@ function storeMemory(
   deleted: string[],
   changedFiles: Record<string, string>,
 ): Promise<void> {
-  let content = `Request: ${prompt}\n`;
-  content += `Files written: ${written.length ? written.join(', ') : 'none'}\n`;
-  content += `Files deleted: ${deleted.length ? deleted.join(', ') : 'none'}\n`;
+  const MAX_FILE_CHARS = 2000;
+
+  // Strip code down to identifiers + plain words only.
+  // Removes colons, slashes, angle brackets, and any other character that
+  // Supermemory's URL/HTML extractor could misinterpret as a URL scheme or tag.
+  const sanitizeForMemory = (s: string) =>
+    s.replace(/[^a-zA-Z0-9 \n\t.,!?_-]/g, ' ').replace(/\s{3,}/g, '  ');
+
+  let content = `Prompt ${sanitizeForMemory(prompt)}\n`;
+  content += `Files written ${written.length ? written.join(' ') : 'none'}\n`;
+  content += `Files deleted ${deleted.length ? deleted.join(' ') : 'none'}\n`;
+  for (const name of written) {
+    const body = changedFiles[name];
+    if (body) {
+      const snippet = body.length > MAX_FILE_CHARS ? body.slice(0, MAX_FILE_CHARS) : body;
+      content += `\nFile ${sanitizeForMemory(name)}\n${sanitizeForMemory(snippet)}\n`;
+    }
+  }
+
+  const safeContent = content;
 
   // customId: alphanumeric + hyphens + underscores only, max 100 chars
   const safeId = `chg_${sandboxId}_${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
   const containerTag = `sandbox_${sandboxId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
 
-  const payload = { content, containerTag, customId: safeId };
+  const payload = { content: safeContent, containerTag, customId: safeId };
   console.log(`[storeMemory] sending — containerTag:${containerTag} customId:${safeId} contentLen:${content.length}`);
 
   return fetch(`${SUPERMEMORY_API}/documents`, {
@@ -482,7 +499,7 @@ export default {
           await Promise.all(
             listing.files
               .filter((f) => f.type === 'file')
-              .map((f) => sandbox.deleteFile(`${APP_DIR}/${f.relativePath}`).catch(() => {}))
+              .map((f) => sandbox.deleteFile(`${APP_DIR}/${f.relativePath}`).catch(() => { }))
           );
         } catch { /* directory may be empty on fresh sandbox */ }
 
@@ -493,7 +510,7 @@ export default {
           fileNames.map((n) => n.includes('/') ? `${APP_DIR}/${n.slice(0, n.lastIndexOf('/'))}` : null).filter(Boolean)
         )] as string[];
         for (const dir of subdirs) {
-          await sandbox.mkdir(dir, { recursive: true }).catch(() => {});
+          await sandbox.mkdir(dir, { recursive: true }).catch(() => { });
         }
         for (const [name, content] of Object.entries(files)) {
           step.name = `writeFile:${name}`;
