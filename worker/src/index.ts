@@ -107,7 +107,8 @@ Rules:
 async function refinePromptWithGemini(apiKey: string, userPrompt: string): Promise<string> {
   const trimmed = userPrompt.trim();
   if (!trimmed) return trimmed;
-  const url = `${GEMINI_API}/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  console.log('[gemini-refine] SENT (transcribed prompt):', trimmed);
+  const url = `${GEMINI_API}/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -336,8 +337,14 @@ export default {
       const body = (await request.json()) as { prompt?: string };
       const raw = typeof body.prompt === 'string' ? body.prompt.trim() : '';
       const geminiKey = (env as unknown as Record<string, unknown>).GEMINI_API_KEY as string | undefined;
-      if (!geminiKey) {
-        return json({ refinedPrompt: raw || '', refinementSkipped: true });
+      const hasKey = Boolean(geminiKey && String(geminiKey).trim().length > 0);
+      console.log('[refine] GEMINI_API_KEY present in worker env:', hasKey);
+      if (!hasKey) {
+        return json({
+          refinedPrompt: raw || '',
+          refinementSkipped: true,
+          refinementSkippedReason: 'GEMINI_API_KEY not set in this worker (local: add to worker/.dev.vars and restart; production: wrangler secret put GEMINI_API_KEY)',
+        });
       }
       try {
         const refined = await refinePromptWithGemini(geminiKey, raw);
