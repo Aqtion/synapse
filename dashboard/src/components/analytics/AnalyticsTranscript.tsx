@@ -34,7 +34,7 @@ export function AnalyticsTranscript({ entries, currentTimeMs, sessionStartMs, on
     },
   );
   const activeIndex = currentIndex >= 0 ? currentIndex : entries.length - 1;
-  const currentRef = useRef<HTMLDivElement>(null);
+  const currentRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (currentRef.current) {

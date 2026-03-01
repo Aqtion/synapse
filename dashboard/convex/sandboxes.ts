@@ -237,16 +237,7 @@ async function fetchGitHubTree(owner: string, repo: string, token?: string): Pro
   const headers: Record<string, string> = { Accept: 'application/vnd.github+json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`, { headers });
-  if (!res.ok) {
-    if (res.status === 403) {
-      throw new Error(
-        'GitHub API returned 403. Root cause: unauthenticated or insufficient token. ' +
-        'Set GITHUB_TOKEN in the Convex dashboard (Settings → Environment) with at least "repo" scope for private repos, or "public_repo" for public repos. ' +
-        'If GITHUB_TOKEN is already set, ensure it is valid and has access to this repository.'
-      );
-    }
-    throw new Error(`GitHub API error: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
   const data = await res.json() as { tree: { path: string; type: string }[] };
   return data.tree;
 }

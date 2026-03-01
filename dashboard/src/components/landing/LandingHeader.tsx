@@ -35,8 +35,8 @@ export function LandingHeader() {
   }
 
   return (
-    <header className="sticky top-5 z-40 w-full max-w-6xl mx-auto bg-background/15 backdrop-blur supports-backdrop-filter:bg-background/80">
-      <div className="flex h-14 w-full max-w-7xl mx-auto items-center justify-between px-4">
+    <header className="sticky top-0 z-40 w-full max-w-6xl mx-auto bg-background/15 backdrop-blur supports-backdrop-filter:bg-background/15">
+      <div className="flex h-14 w-full max-w-7xl mx-auto items-center justify-between py-10 px-8">
         <Link
           href="/"
           className="flex items-center rounded-md py-2 text-foreground hover:opacity-90"
@@ -46,7 +46,7 @@ export function LandingHeader() {
           <span className="text-2xl font-normal -translate-x-3">Synapse</span>
         </Link>
         <Button
-          variant="default"
+          variant="outline"
           size="lg"
           className="text-lg"
           onClick={() => setSignInOpen(true)}

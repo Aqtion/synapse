@@ -38,14 +38,6 @@ const PREDEFINED_RESPONSES = [
   "There you go! Anything else?",
 ];
 
-const PREDEFINED_EMPTY_RESPONSES = [
-  "Pardon.",
-  "Could you repeat that?",
-  "Sorry, I didn't catch that.",
-  "I didn't get that.",
-  "Could you say that again?",
-];
-
 function normalizeSegment(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
 }
@@ -129,7 +121,6 @@ export function SandboxVoice({
   const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusUpdates, setStatusUpdates] = useState<StatusUpdate[]>([]);
-  const [refinedPromptDisplay, setRefinedPromptDisplay] = useState<string | null>(null);
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [transcript, setTranscript] = useState({
     committed: "",
@@ -224,7 +215,6 @@ export function SandboxVoice({
           ? "Analyzing voice prompt…"
           : "Processing text prompt…",
       );
-      setRefinedPromptDisplay(null);
 
       try {
         const { refinedPrompt: refined } = await refinePrompt({
@@ -234,11 +224,10 @@ export function SandboxVoice({
 
         if (isRejection(refined)) {
           addStatus("Couldn't understand the request");
-          await playTts(pickRandom(PREDEFINED_EMPTY_RESPONSES));
+          await playTts("Sorry, could you repeat that?");
           return;
         }
 
-        setRefinedPromptDisplay(refined);
         addStatus("Sending AI refined prompt…");
 
         const result = await runPrompt({
@@ -266,7 +255,6 @@ export function SandboxVoice({
         await playTts("Something went wrong. Please try again.");
       } finally {
         setIsProcessing(false);
-        setRefinedPromptDisplay(null);
       }
     },
     [sandboxId, addStatus, playTts],
@@ -670,7 +658,7 @@ export function SandboxVoice({
 
       {/* ── status updates zone ── */}
       <AnimatePresence>
-        {(statusUpdates.length > 0 || (isProcessing && refinedPromptDisplay)) && (
+        {statusUpdates.length > 0 && (
           <motion.div
             key="status-zone"
             initial={{ opacity: 0 }}
@@ -700,22 +688,6 @@ export function SandboxVoice({
                   </motion.p>
                 ))}
               </AnimatePresence>
-              {isProcessing && refinedPromptDisplay && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.25 }}
-                  className="mt-2 w-full max-w-[min(90vw,420px)] rounded-xl border border-white/10 bg-zinc-900/95 px-4 py-3 shadow-lg backdrop-blur-md"
-                >
-                  <p className="text-[11px] text-white/50 mb-1.5">
-                    Refined prompt sent to AI:
-                  </p>
-                  <p className="text-sm text-white/90 leading-relaxed">
-                    {refinedPromptDisplay}
-                  </p>
-                </motion.div>
-              )}
             </div>
           </motion.div>
         )}

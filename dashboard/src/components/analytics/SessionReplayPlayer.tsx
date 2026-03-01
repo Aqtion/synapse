@@ -1,9 +1,33 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef, useCallback, useState, useEffect } from "react";
 import { Play, Pause, RotateCcw, RotateCw } from "lucide-react";
 
 const PLAYBACK_RATES = [0.5, 1, 1.5, 2] as const;
+
+const POSTHOG_EMBED_ORIGIN = "https://us.posthog.com";
+const POSTHOG_REPLAY_EMBED_ID = "IUAkhGVtGX24NOuA8nU7TMoE8621DQ";
+
+function buildEmbedSrc(initialTimeSeconds: number): string {
+  const base = `${POSTHOG_EMBED_ORIGIN}/embedded/${POSTHOG_REPLAY_EMBED_ID}`;
+  return initialTimeSeconds > 0 ? `${base}?t=${initialTimeSeconds}` : base;
+}
+
+function postToReplayIframe(
+  iframeRef: React.RefObject<HTMLIFrameElement | null>,
+  message: { type: string; action?: string; payload?: unknown }
+) {
+  try {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage(
+      { source: "posthog-replay-parent", ...message },
+      POSTHOG_EMBED_ORIGIN
+    );
+  } catch {
+    // cross-origin; ignore
+  }
+}
 
 type ReplayControlsOverlayProps = {
   isPlaying: boolean;
@@ -111,30 +135,64 @@ export function SessionReplayPlayer({
   onSeekBack10,
   onSeekForward10,
 }: SessionReplayPlayerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [embedStartTimeSeconds, setEmbedStartTimeSeconds] = useState(0);
 
-  const cyclePlaybackRate = () => {
+  const timeSeconds = (currentTimeMs - sessionStartMs) / 1000;
+  const durationSeconds = (sessionEndMs - sessionStartMs) / 1000;
+
+  useEffect(() => {
+    if (sessionReplayVideoUrl) setEmbedStartTimeSeconds(timeSeconds);
+  }, [sessionReplayVideoUrl]); // only sync on session load, not on every timeSeconds change
+
+  const cyclePlaybackRate = useCallback(() => {
     const idx = PLAYBACK_RATES.indexOf(playbackRate as (typeof PLAYBACK_RATES)[number]);
     const next = PLAYBACK_RATES[(idx + 1) % PLAYBACK_RATES.length];
     onPlaybackRateChange(next);
-  };
+    postToReplayIframe(iframeRef, {
+      type: "posthog-replay-control",
+      action: "setPlaybackRate",
+      payload: { rate: next },
+    });
+  }, [playbackRate, onPlaybackRateChange]);
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !sessionReplayVideoUrl) return;
-    const timeSeconds = (currentTimeMs - sessionStartMs) / 1000;
-    if (Math.abs(video.currentTime - timeSeconds) > 0.5) {
-      video.currentTime = Math.max(0, timeSeconds);
-    }
-  }, [currentTimeMs, sessionStartMs, sessionReplayVideoUrl]);
+  const handlePlayPause = useCallback(() => {
+    onPlayPauseToggle();
+    postToReplayIframe(iframeRef, {
+      type: "posthog-replay-control",
+      action: isPlaying ? "pause" : "play",
+    });
+  }, [isPlaying, onPlayPauseToggle]);
+
+  const handleSeekBack = useCallback(() => {
+    onSeekBack10();
+    const newTime = Math.max(0, timeSeconds - 10);
+    setEmbedStartTimeSeconds(newTime);
+    postToReplayIframe(iframeRef, {
+      type: "posthog-replay-control",
+      action: "seek",
+      payload: { timeSeconds: newTime },
+    });
+  }, [onSeekBack10, timeSeconds]);
+
+  const handleSeekForward = useCallback(() => {
+    onSeekForward10();
+    const newTime = Math.min(durationSeconds, timeSeconds + 10);
+    setEmbedStartTimeSeconds(newTime);
+    postToReplayIframe(iframeRef, {
+      type: "posthog-replay-control",
+      action: "seek",
+      payload: { timeSeconds: newTime },
+    });
+  }, [onSeekForward10, durationSeconds, timeSeconds]);
 
   const overlay = (
     <ReplayControlsOverlay
       isPlaying={isPlaying}
       playbackRate={playbackRate}
-      onPlayPauseToggle={onPlayPauseToggle}
-      onSeekBack10={onSeekBack10}
-      onSeekForward10={onSeekForward10}
+      onPlayPauseToggle={handlePlayPause}
+      onSeekBack10={handleSeekBack}
+      onSeekForward10={handleSeekForward}
       onPlaybackRateCycle={cyclePlaybackRate}
     />
   );
@@ -150,15 +208,14 @@ export function SessionReplayPlayer({
 
   return (
     <div className="group relative w-full h-full bg-black">
-      <video
-        ref={videoRef}
-        src={sessionReplayVideoUrl}
-        className="w-full h-full object-contain"
-        muted
-        playsInline
-        preload="metadata"
+      <iframe
+        ref={iframeRef}
+        src={buildEmbedSrc(embedStartTimeSeconds)}
+        className="w-full h-full border-0"
+        allowFullScreen
+        sandbox="allow-scripts allow-same-origin allow-popups"
       />
-      {overlay}
+      {/* {overlay} */}
     </div>
   );
 }

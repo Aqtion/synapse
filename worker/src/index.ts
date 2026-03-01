@@ -1,5 +1,4 @@
 import { getSandbox, proxyToSandbox } from '@cloudflare/sandbox';
-import { injectPostHogIntoHtml } from './posthogPreviewScript';
 import { STARTER_FILES, STUDIO_HTML } from './starterFiles.generated';
 
 export { Sandbox } from '@cloudflare/sandbox';
@@ -119,21 +118,16 @@ async function refinePromptWithGemini(apiKey: string, userPrompt: string): Promi
       generationConfig: { maxOutputTokens: 256, temperature: 0.2 },
     }),
   });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Gemini refine failed ${res.status}: ${errBody.slice(0, 200)}`);
+  }
   const data = (await res.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     error?: { message?: string };
   };
-  if (!res.ok) {
-    const errBody = JSON.stringify(data);
-    console.log('[gemini-refine] ERROR response:', res.status, errBody.slice(0, 500));
-    throw new Error(`Gemini refine failed ${res.status}: ${errBody.slice(0, 200)}`);
-  }
-  if (data.error) {
-    console.log('[gemini-refine] API error:', data.error);
-    throw new Error(data.error.message || 'Gemini API error');
-  }
+  if (data.error) throw new Error(data.error.message || 'Gemini API error');
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  console.log('[gemini-refine] RECEIVED:', text ?? '(empty or missing)');
   return text || trimmed;
 }
 
@@ -171,7 +165,7 @@ function storeMemory(
   const containerTag = `sandbox_${sandboxId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100);
 
   const payload = { content: safeContent, containerTag, customId: safeId };
-  // console.log(`[storeMemory] sending — containerTag:${containerTag} customId:${safeId} contentLen:${content.length}`);
+  console.log(`[storeMemory] sending — containerTag:${containerTag} customId:${safeId} contentLen:${content.length}`);
 
   return fetch(`${SUPERMEMORY_API}/documents`, {
     method: 'POST',
@@ -182,12 +176,10 @@ function storeMemory(
     body: JSON.stringify(payload),
   }).then(async (res) => {
     const body = await res.text();
-    // if (!res.ok) console.error(`[storeMemory] failed ${res.status}:`, body);
-    // else console.log(`[storeMemory] ok ${res.status}:`, body.slice(0, 100));
-    void body;
+    if (!res.ok) console.error(`[storeMemory] failed ${res.status}:`, body);
+    else console.log(`[storeMemory] ok ${res.status}:`, body.slice(0, 100));
   }).catch((e) => {
-    // console.error('[storeMemory] fetch error:', e instanceof Error ? e.message : String(e));
-    void e;
+    console.error('[storeMemory] fetch error:', e instanceof Error ? e.message : String(e));
   });
 }
 
@@ -277,13 +269,8 @@ export default {
         let filePath = sub.replace(/^preview\/?/, '') || 'index.html';
         if (filePath.endsWith('/')) filePath += 'index.html';
         const file = await sandbox.readFile(`${APP_DIR}/${filePath}`);
-        const contentType = mimeFor(filePath);
-        let body: string | Uint8Array = file.content;
-        if (filePath.endsWith('.html') && typeof file.content === 'string') {
-          body = injectPostHogIntoHtml(file.content);
-        }
-        return new Response(body, {
-          headers: corsHeaders({ 'Content-Type': contentType }),
+        return new Response(file.content, {
+          headers: corsHeaders({ 'Content-Type': mimeFor(filePath) }),
         });
       } catch {
         return new Response('File not found', { status: 404 });
@@ -349,7 +336,6 @@ export default {
     if (sub === 'api/refine' && request.method === 'POST') {
       const body = (await request.json()) as { prompt?: string };
       const raw = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-      if (raw) console.log('[refine] received:', raw.slice(0, 80) + (raw.length > 80 ? '...' : ''));
       const geminiKey = (env as unknown as Record<string, unknown>).GEMINI_API_KEY as string | undefined;
       const hasKey = Boolean(geminiKey && String(geminiKey).trim().length > 0);
       console.log('[refine] GEMINI_API_KEY present in worker env:', hasKey);
@@ -390,7 +376,6 @@ export default {
             : geminiKey
               ? await refinePromptWithGemini(geminiKey, prompt)
               : prompt;
-        if (promptToUse) console.log('[prompt] using instruction:', promptToUse.slice(0, 80) + (promptToUse.length > 80 ? '...' : ''));
 
         const noActionPhrases = [
           'no clear request',

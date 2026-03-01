@@ -141,7 +141,9 @@ function EmotionTimelineChartInner({
 }: EmotionTimelineChartProps) {
   const durationMs = Math.max(0, sessionEndMs - sessionStartMs);
 
-  const data = useMemo(
+  const SAMPLE_EVERY_N = 5;
+
+  const fullData = useMemo(
     () =>
       emotionSamples.map((s) => ({
         ...s,
@@ -150,10 +152,21 @@ function EmotionTimelineChartInner({
     [emotionSamples, sessionStartMs],
   );
 
+  const data = useMemo(() => {
+    if (fullData.length <= SAMPLE_EVERY_N) return fullData;
+    const sampled: typeof fullData = [];
+    for (let i = 0; i < fullData.length; i++) {
+      if (i % SAMPLE_EVERY_N === 0 || i === fullData.length - 1) {
+        sampled.push(fullData[i]!);
+      }
+    }
+    return sampled;
+  }, [fullData]);
+
   const yMax = useMemo(() => {
-    if (data.length === 0) return 1;
+    if (fullData.length === 0) return 1;
     let max = 0;
-    for (const d of data) {
+    for (const d of fullData) {
       max = Math.max(
         max,
         d.lowEnergyUnpleasant,
@@ -162,8 +175,8 @@ function EmotionTimelineChartInner({
         d.highEnergyUnpleasant,
       );
     }
-    return Math.max(max, 0.01);
-  }, [data]);
+    return Math.max(max, 0.01) + 0.15;
+  }, [fullData]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoverTimeSeconds, setHoverTimeSeconds] = useState<number | null>(null);

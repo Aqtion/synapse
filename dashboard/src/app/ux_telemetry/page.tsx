@@ -1,16 +1,8 @@
 "use client";
 
-import {
-  captureEvent,
-  getDistinctId,
-  getSessionReplayUrl,
-  initPostHog,
-  isPostHogReady,
-  useHumeStream,
-  useMouseTracker,
-} from "@/ux_telemetry";
+import { useHumeStream, useMouseTracker } from "@/ux_telemetry";
 import type { HumeEmotionMap, HumeStreamMessage } from "@/ux_telemetry";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 function FaceStatus({
   emotions,
@@ -52,14 +44,6 @@ export default function HumeStreamTestPage() {
   const [messageCount, setMessageCount] = useState(0);
   const [lastRaw, setLastRaw] = useState<HumeStreamMessage | null>(null);
 
-  const [posthogState, setPosthogState] = useState<
-    "idle" | "initializing" | "ready" | "missing_key" | "error"
-  >("idle");
-  const [posthogDistinctId, setPosthogDistinctId] = useState("");
-  const [posthogReplayUrl, setPosthogReplayUrl] = useState("");
-  const [rageClicks, setRageClicks] = useState(0);
-  const [lastPosthogEvent, setLastPosthogEvent] = useState<string>("");
-
   const onMessage = useCallback((emotions: HumeEmotionMap) => {
     setLastEmotions(emotions);
     setMessageCount((c) => c + 1);
@@ -77,36 +61,6 @@ export default function HumeStreamTestPage() {
     throttleMs: 100,
     enabled: true,
   });
-
-  const initPosthog = useCallback(async () => {
-    const envKey = (process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "").trim();
-    if (!envKey) {
-      setPosthogState("missing_key");
-      return;
-    }
-    setPosthogState("initializing");
-    const ok = await initPostHog({
-      enableSessionReplay: true,
-      onEventCaptured: (evt) => setLastPosthogEvent(evt.name),
-      onRageClick: () => setRageClicks((c) => c + 1),
-    });
-    if (!ok) {
-      setPosthogState("error");
-      return;
-    }
-    setPosthogState(isPostHogReady() ? "ready" : "error");
-    setPosthogDistinctId(getDistinctId());
-    setPosthogReplayUrl(getSessionReplayUrl());
-  }, []);
-
-  useEffect(() => {
-    // Best-effort: keep replay URL fresh after init.
-    if (posthogState !== "ready") return;
-    const id = window.setInterval(() => {
-      setPosthogReplayUrl(getSessionReplayUrl());
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [posthogState]);
 
   return (
     <div className="space-y-6">
@@ -227,78 +181,6 @@ export default function HumeStreamTestPage() {
           ) : (
             <p className="text-slate-500">Move the mouse to see snapshot.</p>
           )}
-        </div>
-      </details>
-
-      <details className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-left">
-        <summary className="text-sm font-medium text-slate-50 cursor-pointer">
-          PostHog (product analytics + session replay)
-        </summary>
-        <div className="mt-3 space-y-2 text-sm text-slate-300">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">State:</span>
-            <span>{posthogState}</span>
-          </div>
-          {posthogState === "missing_key" && (
-            <p className="text-amber-400">
-              Missing <code>NEXT_PUBLIC_POSTHOG_KEY</code> in{" "}
-              <code>dashboard/.env.local</code>.
-            </p>
-          )}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={initPosthog}
-              className="rounded-md bg-slate-700 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-600 disabled:opacity-50"
-              disabled={posthogState === "initializing" || posthogState === "ready"}
-            >
-              Init PostHog
-            </button>
-            <button
-              type="button"
-              onClick={() => captureEvent("ux_telemetry_test", { ts: Date.now() })}
-              className="rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-100 hover:bg-slate-700 disabled:opacity-50"
-              disabled={posthogState !== "ready"}
-            >
-              Capture test event
-            </button>
-          </div>
-          <div className="grid gap-2">
-            <div>
-              <span className="text-slate-400">Distinct ID:</span>{" "}
-              <span className="break-all">{posthogDistinctId || "—"}</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Session replay URL:</span>{" "}
-              {posthogReplayUrl ? (
-                <a
-                  className="underline break-all"
-                  href={posthogReplayUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  open replay
-                </a>
-              ) : (
-                <span>—</span>
-              )}
-            </div>
-            <div>
-              <span className="text-slate-400">Rage clicks:</span>{" "}
-              <span>{rageClicks}</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Last captured event:</span>{" "}
-              <span>{lastPosthogEvent || "—"}</span>
-            </div>
-          </div>
-          <p className="text-xs text-slate-500">
-            Realtime behavioral signals are available via <code>onEventCaptured</code>{" "}
-            (e.g. <code>$rageclick</code>, <code>$dead_click</code>,{" "}
-            <code>$autocapture</code>). In the real sandbox route, send these
-            events (with timestamps) to your backend / Convex for offline
-            analysis instead of reacting to them live.
-          </p>
         </div>
       </details>
     </div>
