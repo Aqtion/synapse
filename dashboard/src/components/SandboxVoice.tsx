@@ -126,6 +126,7 @@ export function SandboxVoice({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [refinedPromptDisplay, setRefinedPromptDisplay] = useState<string | null>(null);
   const [statusUpdates, setStatusUpdates] = useState<StatusUpdate[]>([]);
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [transcript, setTranscript] = useState({
@@ -262,6 +263,7 @@ export function SandboxVoice({
           return;
         }
 
+        setRefinedPromptDisplay(refined);
         addStatus("Sending AI refined prompt…");
 
         const result = await runPrompt({
@@ -289,6 +291,7 @@ export function SandboxVoice({
         await playTts("Something went wrong. Please try again.");
       } finally {
         setIsProcessing(false);
+        setRefinedPromptDisplay(null);
       }
     },
     [sandboxId, addStatus, playTts],
