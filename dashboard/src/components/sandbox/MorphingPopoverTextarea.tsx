@@ -4,7 +4,7 @@ import {
   MorphingPopoverTrigger,
   MorphingPopoverContent,
 } from '@/components/core/morphing-popover';
-import { motion } from 'motion/react';
+import { motion } from "framer-motion";
 import { useId, useState } from 'react';
 import { ArrowLeftIcon } from 'lucide-react';
 

@@ -1,4 +1,5 @@
 import { getSandbox, proxyToSandbox } from '@cloudflare/sandbox';
+import { injectPostHogIntoHtml } from './posthogPreviewScript';
 import { STARTER_FILES, STUDIO_HTML } from './starterFiles.generated';
 
 export { Sandbox } from '@cloudflare/sandbox';
@@ -88,57 +89,6 @@ Rules:
 const APP_DIR = '/workspace/app';
 const SANDBOX_ID_RE = /^\/s\/([a-z0-9][a-z0-9-]{0,28}[a-z0-9]?)\//;
 
-/**
- * Injected into preview HTML. Listens for POSTHOG_INIT (from studio) and POSTHOG_STOP (from parent).
- * Also stops recording on this frame's pagehide/visibilitychange so the session ends when the user
- * closes the tab or switches away, even if the parent's postMessage never arrives.
- */
-const POSTHOG_LISTENER_SCRIPT = (function () {
-  const parts: string[] = [];
-  function add(s: string) {
-    parts.push(s);
-  }
-  add('(function(){');
-  add('window.__posthogPreviewReady=false;');
-  add('window.__posthogStopped=false;');
-  add('function stopAndFlush(){');
-  add('if(window.__posthogStopped)return;');
-  add('window.__posthogStopped=true;');
-  add('if(window.posthog){try{window.posthog.stopSessionRecording();}catch(e){}');
-  add('try{if(window.posthog.flush)window.posthog.flush();}catch(e){}}');
-  add('}');
-  add('window.addEventListener("message",function(e){');
-  add('var d=e.data;if(!d||!d.type)return;');
-  add('if(d.type==="POSTHOG_STOP"){stopAndFlush();return;}');
-  add('if(d.type==="POSTHOG_INIT"&&d.apiKey&&d.apiHost){');
-  add('if(window.__posthogPreviewReady)return;');
-  add('var apiHost=(d.apiHost||"https://us.i.posthog.com").replace(/\\/$/,"");');
-  add('var s=document.createElement("script");s.crossOrigin="anonymous";s.async=true;');
-  add('s.src=apiHost.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js";');
-  add('s.onload=function(){');
-  add('window.posthog.init(d.apiKey,{api_host:apiHost,person_profiles:"identified_only",session_recording:{maskAllInputs:true}});');
-  add('if(d.sandboxId)window.posthog.register({sandbox_id:d.sandboxId});');
-  add('window.__posthogPreviewReady=true;');
-  add('window.addEventListener("pagehide",stopAndFlush);');
-  add('document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")stopAndFlush();});');
-  add('};');
-  add('document.head.appendChild(s);');
-  add('}');
-  add('});');
-  add('})();');
-  return parts.join('');
-})();
-
-function injectPostHogIntoHtml(html: string): string {
-  const scriptTag = `<script>${POSTHOG_LISTENER_SCRIPT}</script>`;
-  if (html.includes('</head>')) {
-    return html.replace('</head>', `${scriptTag}\n</head>`);
-  }
-  if (html.includes('<body>')) {
-    return html.replace('<body>', `<body>\n${scriptTag}`);
-  }
-  return scriptTag + '\n' + html;
-}
 const SUPERMEMORY_API = 'https://api.supermemory.ai/v3';
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 

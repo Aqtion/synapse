@@ -1,6 +1,6 @@
 "use client";
 
-export { useHumeStream } from "./useHumeStream";
+export { useHumeStream, getTimestampMsFromHumePayload } from "./useHumeStream";
 export {
   HUME_FRAME_INTERVAL_MS,
   HUME_MAX_FPS,

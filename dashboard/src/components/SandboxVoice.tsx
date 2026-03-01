@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Smile, Pencil, ArrowLeft, Send } from "lucide-react";
 import { refinePrompt, runPrompt } from "@/lib/workerClient";
 import {

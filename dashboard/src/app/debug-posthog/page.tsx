@@ -93,7 +93,7 @@ export default function DebugPostHogPage() {
           <li>In PostHog: Session Replay → newest recording → copy <strong>Start, Duration, Entry URL</strong> (and any errors) and paste here.</li>
         </ol>
         <p className="text-xs text-muted-foreground mb-3">
-          Expect: <strong>is_preview_frame: Yes</strong> (preview only), <strong>session_has_end_time: Yes</strong>, duration ≈ time you spent (not 83 min). Session should stop on tab close / navigate / tab hidden.
+          Expect: <strong>is_preview_frame: Yes</strong> (preview only), <strong>session_has_end_time: Yes</strong>, <strong>ongoing: No</strong>, duration ≈ time you spent. Session stops on tab close / navigate / tab hidden. The replay video in the portal can take a few minutes to appear after the session ends (PostHog processing).
         </p>
         <p className="text-xs font-medium text-foreground mb-1">What to paste for debugging (if it still fails):</p>
         <ol className="text-xs list-decimal list-inside space-y-1 text-muted-foreground">
