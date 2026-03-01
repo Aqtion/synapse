@@ -109,7 +109,7 @@ async function refinePromptWithGemini(apiKey: string, userPrompt: string): Promi
   const trimmed = userPrompt.trim();
   if (!trimmed) return trimmed;
   console.log('[gemini-refine] SENT (transcribed prompt):', trimmed);
-  const url = `${GEMINI_API}/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = `${GEMINI_API}/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
