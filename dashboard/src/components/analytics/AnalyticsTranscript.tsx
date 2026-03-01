@@ -8,6 +8,7 @@ export type TranscriptEntry = {
   timestampMs: number;
   text: string;
   isAiPrompt: boolean;
+  fromMic?: boolean;
 };
 
 type AnalyticsTranscriptProps = {
