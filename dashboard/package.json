@@ -10,6 +10,7 @@
     "convex:dev": "convex dev"
   },
   "dependencies": {
+    "cross-spawn": "^7.0.6",
     "@base-ui/react": "^1.2.0",
     "@convex-dev/better-auth": "^0.10.13",
     "@convex-dev/resend": "^0.2.3",
