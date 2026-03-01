@@ -1,25 +1,44 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "convex/_generated/api";
-import type { Id } from "convex/_generated/dataModel";
+import { motion, AnimatePresence } from "motion/react";
+import { Smile, Pencil, ArrowLeft, Send } from "lucide-react";
+import { refinePrompt, runPrompt } from "@/lib/workerClient";
+import {
+  AudioLinesIcon,
+  type AudioLinesIconHandle,
+} from "@/components/ui/audio-lines";
+import { cn } from "@/lib/utils";
+import useClickOutside from "@/hooks/useClickOutside";
 
 const WS_PATH = "/ws/stt";
 const TARGET_SAMPLE_RATE = 16000;
-
-/** Minimum character length for a segment to be sent (avoids empty/filler). */
 const MIN_SEGMENT_LENGTH = 2;
-/** For voice, only send the tail of very long transcripts so we don't send stale buffer preamble; refiner will clean the rest. */
 const MAX_VOICE_PROMPT_CHARS = 420;
-/** Patterns that are considered garbage and should not be sent. */
-const GARBAGE_REGEX = /^(?:um+|uh+|hm+|ah+|oh+|like|yeah|nope|okay|ok\s*)$|^[\s.,?!\-–—;:'"]+$/i;
+const GARBAGE_REGEX =
+  /^(?:um+|uh+|hm+|ah+|oh+|like|yeah|nope|okay|ok\s*)$|^[\s.,?!\-–—;:'"]+$/i;
+const SPEAKING_DEBOUNCE_MS = 500;
+
+const NO_ACTION_PHRASES = [
+  "no clear request",
+  "no actionable request",
+  "unintelligible",
+  "nothing to do",
+  "no change needed",
+];
+
+const PREDEFINED_RESPONSES = [
+  "Done! What do you think?",
+  "Changes are live, take a look!",
+  "All set! Let me know if you want any tweaks.",
+  "Updated! How does that look?",
+  "There you go! Anything else?",
+];
 
 function normalizeSegment(raw: string): string {
   return raw.replace(/\s+/g, " ").trim();
 }
 
-/** Returns the segment to send, or null if it's empty/garbage and should not be sent downstream. */
 function filterGarbageAndEmpty(raw: string): string | null {
   const s = normalizeSegment(raw);
   if (s.length < MIN_SEGMENT_LENGTH) return null;
@@ -33,7 +52,10 @@ function getWsUrl(): string {
   return `${protocol}//${window.location.host}${WS_PATH}`;
 }
 
-function downsampleTo16k(float32: Float32Array, sourceSampleRate: number): Int16Array {
+function downsampleTo16k(
+  float32: Float32Array,
+  sourceSampleRate: number,
+): Int16Array {
   const ratio = sourceSampleRate / TARGET_SAMPLE_RATE;
   const outLength = Math.floor(float32.length / ratio);
   const out = new Int16Array(outLength);
@@ -43,8 +65,7 @@ function downsampleTo16k(float32: Float32Array, sourceSampleRate: number): Int16
     const frac = srcIndex - idx;
     const next = idx + 1 < float32.length ? float32[idx + 1] : float32[idx];
     const sample = float32[idx] * (1 - frac) + next * frac;
-    const s16 = Math.max(-32768, Math.min(32767, Math.round(sample * 32767)));
-    out[i] = s16;
+    out[i] = Math.max(-32768, Math.min(32767, Math.round(sample * 32767)));
   }
   return out;
 }
@@ -56,83 +77,185 @@ function int16ToBase64(int16: Int16Array): string {
   return btoa(binary);
 }
 
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function isRejection(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  return (
+    !text ||
+    text.length < 2 ||
+    NO_ACTION_PHRASES.some(
+      (p) =>
+        lower === p ||
+        lower.startsWith(p + ".") ||
+        lower.startsWith(p + ","),
+    )
+  );
+}
+
+let statusIdCounter = 0;
+
+type ToolbarMode = "idle" | "text" | "transcribing";
+type StatusUpdate = { id: string; text: string };
+
 type SandboxVoiceProps = {
   sandboxId: string;
-  workerBaseUrl: string;
+  emotionColor?: "green" | "yellow" | "red";
 };
 
-export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
-  const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
-  const [isMicDown, setIsMicDown] = useState(false);
-  const [sttError, setSttError] = useState<string | null>(null);
-  const [ttsPlaying, setTtsPlaying] = useState(false);
+export function SandboxVoice({
+  sandboxId,
+  emotionColor = "yellow",
+}: SandboxVoiceProps) {
   const [isListening, setIsListening] = useState(false);
-
-  const insertTranscriptEntry = useMutation(api.analytics.insertTranscriptEntry);
-  const startVoiceSession = useMutation(api.analytics.startVoiceSession);
-  const endVoiceSession = useMutation(api.analytics.endVoiceSession);
+  const [sttError, setSttError] = useState<string | null>(null);
+  const [mode, setMode] = useState<ToolbarMode>("idle");
+  const modeRef = useRef<ToolbarMode>("idle");
+  const [textInput, setTextInput] = useState("");
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const speakingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [statusUpdates, setStatusUpdates] = useState<StatusUpdate[]>([]);
+  const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [transcript, setTranscript] = useState({
+    committed: "",
+    partial: "",
+  });
 
   const wsRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
-  const isMicDownRef = useRef(false);
-  const currentPartialRef = useRef("");
-  const segmentLinesRef = useRef<string[]>([]);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountRef = useRef(true);
-  const voiceSessionIdRef = useRef<Id<"sandboxAnalyticsSessions"> | null>(null);
-  const voiceSessionPromiseRef = useRef<Promise<Id<"sandboxAnalyticsSessions">> | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const audioLinesRef = useRef<AudioLinesIconHandle>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const transcriptPanelRef = useRef<HTMLDivElement>(null);
+  const committedRef = useRef("");
+  const partialRef = useRef("");
+  const captureStartRef = useRef(0);
+  const isTranscribingRef = useRef(false);
 
-  const getOrCreateVoiceSessionId = useCallback((): Promise<Id<"sandboxAnalyticsSessions">> => {
-    if (voiceSessionIdRef.current != null) return Promise.resolve(voiceSessionIdRef.current);
-    if (voiceSessionPromiseRef.current != null) return voiceSessionPromiseRef.current;
-    voiceSessionPromiseRef.current = startVoiceSession({ sandboxId }).then((id) => {
-      voiceSessionIdRef.current = id;
-      voiceSessionPromiseRef.current = null;
-      return id;
-    });
-    return voiceSessionPromiseRef.current;
-  }, [sandboxId, startVoiceSession]);
+  // ── helpers ──
 
-  const getIframe = useCallback(() => {
-    return document.getElementById("sandboxFrame") as HTMLIFrameElement | null;
+  const addStatus = useCallback((text: string) => {
+    const id = `status-${++statusIdCounter}`;
+    setStatusUpdates((prev) => [...prev, { id, text }]);
+    setTimeout(() => {
+      setStatusUpdates((prev) => prev.filter((s) => s.id !== id));
+    }, 4000);
   }, []);
 
-  const appendTranscript = useCallback((text: string, isPartial: boolean) => {
-    if (!text.trim()) return;
-    if (isPartial) {
-      currentPartialRef.current = text;
-      setTranscriptLines((prev) => {
-        const rest = prev.slice(0, -1);
-        const last = prev[prev.length - 1];
-        if (last !== undefined && last.startsWith("…")) return [...rest, "… " + text];
-        return [...prev, "… " + text];
+  const playTts = useCallback(async (text: string) => {
+    setTtsPlaying(true);
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
       });
-      return;
+      if (!res.ok) throw new Error("TTS failed");
+      const buf = await res.arrayBuffer();
+      const blob = new Blob([buf], { type: "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      await new Promise<void>((resolve) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        audio.onerror = () => {
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+        audio.play().catch(resolve);
+      });
+    } catch {
+      /* silent */
+    } finally {
+      setTtsPlaying(false);
     }
-    currentPartialRef.current = "";
-    setTranscriptLines((prev) => {
-      const rest = prev.slice(0, -1).filter((l) => !l.startsWith("…"));
-      return [...rest, text];
-    });
-    if (isMicDownRef.current) segmentLinesRef.current = [...segmentLinesRef.current, text];
   }, []);
+
+  // ── request pipeline (refine → run) ──
+
+  const processPrompt = useCallback(
+    async (rawText: string, source: "voice" | "text") => {
+      const text = filterGarbageAndEmpty(rawText);
+      if (!text) {
+        addStatus("No speech captured");
+        return;
+      }
+
+      setIsProcessing(true);
+      addStatus(
+        source === "voice"
+          ? "Analyzing voice prompt…"
+          : "Processing text prompt…",
+      );
+
+      try {
+        const { refinedPrompt: refined } = await refinePrompt({
+          sandboxId,
+          prompt: text,
+        });
+
+        if (isRejection(refined)) {
+          addStatus("Couldn't understand the request");
+          await playTts("Sorry, could you repeat that?");
+          return;
+        }
+
+        addStatus("Sending AI refined prompt…");
+
+        const result = await runPrompt({
+          sandboxId,
+          prompt: text,
+          refinedPrompt: refined,
+        });
+
+        if ("error" in result) {
+          addStatus(`Error: ${result.error}`);
+          await playTts("Something went wrong. Please try again.");
+          return;
+        }
+
+        const iframe = document.getElementById(
+          "sandboxFrame",
+        ) as HTMLIFrameElement | null;
+        if (iframe) iframe.src = iframe.src;
+
+        addStatus("Changes applied!");
+        await playTts(pickRandom(PREDEFINED_RESPONSES));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        addStatus(`Error: ${msg}`);
+        await playTts("Something went wrong. Please try again.");
+      } finally {
+        setIsProcessing(false);
+      }
+    },
+    [sandboxId, addStatus, playTts],
+  );
+
+  // ── lifecycle ──
 
   useEffect(() => {
     mountRef.current = true;
     return () => {
       mountRef.current = false;
-      const sessionId = voiceSessionIdRef.current;
-      if (sessionId) {
-        voiceSessionIdRef.current = null;
-        endVoiceSession({ sessionId }).catch(() => {});
-      }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
     };
-  }, [endVoiceSession]);
+  }, []);
+
+  // ── STT WebSocket ──
 
   useEffect(() => {
     let cancelled = false;
@@ -140,7 +263,8 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
     if (!url) return;
 
     function connect() {
-      if (!mountRef.current || wsRef.current?.readyState === WebSocket.OPEN) return;
+      if (!mountRef.current || wsRef.current?.readyState === WebSocket.OPEN)
+        return;
       const ws = new WebSocket(url);
       wsRef.current = ws;
       setSttError(null);
@@ -155,31 +279,40 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
         try {
           const msg = JSON.parse(event.data as string);
           if (msg.type === "partial_transcript" && msg.text != null) {
-            appendTranscript(msg.text, true);
-          } else if (msg.type === "committed_transcript" && msg.text != null) {
-            appendTranscript(msg.text, false);
-            const toSave = filterGarbageAndEmpty(msg.text);
-            if (toSave != null) {
-              getOrCreateVoiceSessionId().then((sessionId) => {
-                insertTranscriptEntry({
-                  sandboxId,
-                  timestampMs: Date.now(),
-                  text: toSave,
-                  sessionId,
-                  isAiPrompt: false,
-                }).catch(() => {});
-              }).catch(() => {});
-            }
+            partialRef.current = msg.text ?? "";
+            setTranscript((prev) => ({
+              ...prev,
+              partial: partialRef.current,
+            }));
+            setIsSpeaking(true);
+            if (speakingTimeoutRef.current)
+              clearTimeout(speakingTimeoutRef.current);
+            speakingTimeoutRef.current = setTimeout(
+              () => setIsSpeaking(false),
+              SPEAKING_DEBOUNCE_MS,
+            );
+          } else if (
+            msg.type === "committed_transcript" &&
+            msg.text != null
+          ) {
+            const text = msg.text ?? "";
+            committedRef.current +=
+              (committedRef.current ? " " : "") + text;
+            partialRef.current = "";
+            setTranscript({
+              committed: committedRef.current,
+              partial: "",
+            });
           } else if (msg.type === "error") {
             setSttError(msg.message || "STT error");
           } else if (msg.type === "upstream_closed") {
             const reason = String(msg.reason ?? "");
-            const isNormalClose = /\(1000\)|normal/i.test(reason);
-            if (!isNormalClose) setSttError(reason || "STT connection closed");
+            if (!/\(1000\)|normal/i.test(reason))
+              setSttError(reason || "STT connection closed");
             else setSttError(null);
           }
-        } catch (_) {
-          // ignore
+        } catch {
+          /* ignore */
         }
       };
 
@@ -209,10 +342,17 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
       if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.close();
       wsRef.current = null;
     };
-  }, [appendTranscript, getOrCreateVoiceSessionId, insertTranscriptEntry, sandboxId]);
+  }, []);
+
+  // ── audio capture ──
 
   useEffect(() => {
-    if (!isListening || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    if (
+      !isListening ||
+      !wsRef.current ||
+      wsRef.current.readyState !== WebSocket.OPEN
+    )
+      return;
 
     let audioContext: AudioContext | null = null;
     let source: MediaStreamAudioSourceNode | null = null;
@@ -227,8 +367,7 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
         audioContext = ctx;
         const src = ctx.createMediaStreamSource(stream);
         source = src;
-        const bufferSize = 4096;
-        const proc = ctx.createScriptProcessor(bufferSize, 1, 1);
+        const proc = ctx.createScriptProcessor(4096, 1, 1);
         processor = proc;
         proc.onaudioprocess = (e) => {
           const ws = wsRef.current;
@@ -237,8 +376,16 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
           const int16 = downsampleTo16k(input, ctx.sampleRate);
           const b64 = int16ToBase64(int16);
           try {
-            ws.send(JSON.stringify({ type: "input_audio_chunk", audioBase64: b64, sampleRate: TARGET_SAMPLE_RATE }));
-          } catch (_) {}
+            ws.send(
+              JSON.stringify({
+                type: "input_audio_chunk",
+                audioBase64: b64,
+                sampleRate: TARGET_SAMPLE_RATE,
+              }),
+            );
+          } catch {
+            /* ignore */
+          }
         };
         src.connect(proc);
         proc.connect(ctx.destination);
@@ -252,7 +399,9 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
         try {
           source.disconnect();
           processor.disconnect();
-        } catch (_) {}
+        } catch {
+          /* ignore */
+        }
       }
       if (audioContext) audioContext.close();
       if (streamRef.current) {
@@ -263,129 +412,336 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
     };
   }, [isListening]);
 
+  // ── audio lines animation ──
+
   useEffect(() => {
-    const handler = (event: MessageEvent) => {
-      const d = event.data;
-      if (!d || d.type !== "SANDBOX_RESPONSE" || typeof d.text !== "string") return;
-      const text = d.text.trim();
-      if (!text) return;
+    if (isSpeaking) audioLinesRef.current?.startAnimation();
+    else audioLinesRef.current?.stopAnimation();
+  }, [isSpeaking, mode]);
 
-      setTtsPlaying(true);
-      fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error("TTS failed");
-          return res.arrayBuffer();
-        })
-        .then((buf) => {
-          const blob = new Blob([buf], { type: "audio/mpeg" });
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audio.onended = () => {
-            URL.revokeObjectURL(url);
-            setTtsPlaying(false);
-          };
-          audio.onerror = () => {
-            URL.revokeObjectURL(url);
-            setTtsPlaying(false);
-          };
-          audio.play();
-        })
-        .catch(() => setTtsPlaying(false));
+  // ── mode transitions ──
+
+  const enterTextMode = useCallback(() => {
+    if (isProcessing || ttsPlaying) return;
+    setMode("text");
+    modeRef.current = "text";
+    setTextInput("");
+    setTimeout(() => textareaRef.current?.focus(), 100);
+  }, [isProcessing, ttsPlaying]);
+
+  const exitTextMode = useCallback(() => {
+    setMode("idle");
+    modeRef.current = "idle";
+    setTextInput("");
+  }, []);
+
+  const submitText = useCallback(() => {
+    const text = textInput.trim();
+    exitTextMode();
+    if (text) processPrompt(text, "text");
+  }, [textInput, exitTextMode, processPrompt]);
+
+  const enterTranscribing = useCallback(() => {
+    if (isProcessing || ttsPlaying || modeRef.current === "text") return;
+    captureStartRef.current = committedRef.current.length;
+    isTranscribingRef.current = true;
+    setMode("transcribing");
+    modeRef.current = "transcribing";
+  }, [isProcessing, ttsPlaying]);
+
+  const exitTranscribing = useCallback(() => {
+    if (!isTranscribingRef.current) return;
+    isTranscribingRef.current = false;
+    setMode("idle");
+    modeRef.current = "idle";
+
+    const newCommitted = committedRef.current.slice(captureStartRef.current);
+    let captured = (
+      newCommitted + (partialRef.current ? " " + partialRef.current : "")
+    ).trim();
+    if (captured.length > MAX_VOICE_PROMPT_CHARS) {
+      captured = captured.slice(-MAX_VOICE_PROMPT_CHARS).trim();
+    }
+    if (captured) processPrompt(captured, "voice");
+  }, [processPrompt]);
+
+  // ── click outside (text mode) ──
+
+  useClickOutside(
+    toolbarRef as React.RefObject<HTMLDivElement>,
+    useCallback(() => {
+      if (modeRef.current === "text") exitTextMode();
+    }, [exitTextMode]),
+  );
+
+  // ── Shift+Space keyboard handler ──
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (modeRef.current === "text") return;
+      if (e.shiftKey && e.code === "Space") {
+        e.preventDefault();
+        if (!isTranscribingRef.current) enterTranscribing();
+      }
     };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, []);
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (!isTranscribingRef.current) return;
+      if (
+        e.code === "Space" ||
+        e.code === "ShiftLeft" ||
+        e.code === "ShiftRight"
+      ) {
+        e.preventDefault();
+        exitTranscribing();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, [enterTranscribing, exitTranscribing]);
 
-  const handleMicDown = useCallback(() => {
-    isMicDownRef.current = true;
-    currentPartialRef.current = "";
-    segmentLinesRef.current = [];
-    setTranscriptLines([]);
-    setIsMicDown(true);
-  }, []);
+  // ── Escape for text mode ──
 
-  const handleMicUp = useCallback(() => {
-    if (!isMicDown) return;
-    isMicDownRef.current = false;
-    setIsMicDown(false);
-    const segmentText = [...segmentLinesRef.current];
-    if (currentPartialRef.current.trim()) segmentText.push(currentPartialRef.current);
-    let raw = segmentText.join(" ").trim();
-    // Prefer the tail of long voice input so we don't send stale buffer preamble; refiner will extract the real instruction.
-    if (raw.length > MAX_VOICE_PROMPT_CHARS) {
-      raw = raw.slice(-MAX_VOICE_PROMPT_CHARS).trim();
+  useEffect(() => {
+    if (mode !== "text") return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") exitTextMode();
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [mode, exitTextMode]);
+
+  // ── auto-scroll transcript panel ──
+
+  useEffect(() => {
+    if (mode === "transcribing" && transcriptPanelRef.current) {
+      transcriptPanelRef.current.scrollTop =
+        transcriptPanelRef.current.scrollHeight;
     }
-    const text = filterGarbageAndEmpty(raw);
-    segmentLinesRef.current = [];
-    currentPartialRef.current = "";
-    if (text == null || !text) return;
+  }, [transcript, mode]);
 
-    const iframe = getIframe();
-    if (iframe?.contentWindow) {
-      iframe.contentWindow.postMessage({ type: "VOICE_PROMPT", text }, "*");
-    }
-  }, [isMicDown, getIframe]);
+  // ── computed values ──
 
-  const displayLines = transcriptLines;
-  const popupContent = displayLines.length === 0 && !currentPartialRef.current ? "" : displayLines.join(" ");
+  const capturedText =
+    mode === "transcribing"
+      ? (
+          transcript.committed.slice(captureStartRef.current) +
+          (transcript.partial ? " " + transcript.partial : "")
+        ).trim()
+      : "";
+
+  const emotionBg =
+    emotionColor === "green"
+      ? "bg-green-500/20"
+      : emotionColor === "red"
+        ? "bg-red-500/20"
+        : "bg-yellow-500/20";
+
+  const emotionRing =
+    emotionColor === "green"
+      ? "ring-green-500/40"
+      : emotionColor === "red"
+        ? "ring-red-500/40"
+        : "ring-yellow-500/40";
+
+  const toolbarWidth =
+    mode === "text" ? 400 : mode === "transcribing" ? 260 : 200;
 
   return (
     <>
-      <div
-        className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2"
-        style={{ pointerEvents: "none" }}
-        aria-hidden
-      >
-        <div
-          className="pointer-events-auto flex max-h-[140px] min-h-[44px] w-[280px] flex-col overflow-hidden rounded-xl border border-border bg-background/95 shadow-lg backdrop-blur"
-          role="log"
-          aria-live="polite"
-        >
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 text-sm text-muted-foreground">
-            {sttError ? (
-              <p className="text-destructive">{sttError}</p>
-            ) : (
-              <p className="whitespace-pre-wrap break-words">{popupContent || "Listening…"}</p>
-            )}
-          </div>
-        </div>
-        <button
-          type="button"
-          onMouseDown={handleMicDown}
-          onMouseUp={handleMicUp}
-          onMouseLeave={handleMicUp}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            handleMicDown();
-          }}
-          onTouchEnd={(e) => {
-            e.preventDefault();
-            handleMicUp();
-          }}
-          onTouchCancel={handleMicUp}
-          disabled={!isListening || ttsPlaying}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background shadow-md transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-          style={{ pointerEvents: "auto" }}
-          aria-label={isMicDown ? "Release to send" : "Hold to speak and send"}
-        >
-          {ttsPlaying ? (
-            <span className="text-xs text-muted-foreground">…</span>
-          ) : (
-            <svg
-              className={`h-5 w-5 text-foreground ${isMicDown ? "text-primary" : ""}`}
-              fill="currentColor"
-              viewBox="0 0 24 24"
-              aria-hidden
+      {/* ── status updates zone ── */}
+      <AnimatePresence>
+        {statusUpdates.length > 0 && (
+          <motion.div
+            key="status-zone"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+            className="fixed bottom-20 left-0 right-0 z-50 flex justify-center pointer-events-none"
+          >
+            <div
+              className="flex flex-col items-center gap-1 px-8 pt-10 pb-4"
+              style={{
+                background:
+                  "linear-gradient(to bottom, transparent, rgba(0,0,0,0.5))",
+              }}
             >
-              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
-            </svg>
+              <AnimatePresence mode="popLayout">
+                {statusUpdates.map((u) => (
+                  <motion.p
+                    key={u.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.25 }}
+                    className="text-xs text-white/70"
+                  >
+                    {u.text}
+                  </motion.p>
+                ))}
+              </AnimatePresence>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── toolbar area ── */}
+      <div className="fixed bottom-6 left-0 right-0 z-50 flex flex-col items-center pointer-events-none gap-3">
+        {/* transcript panel (transcribing mode) */}
+        <AnimatePresence>
+          {mode === "transcribing" && (
+            <motion.div
+              key="transcript-panel"
+              ref={transcriptPanelRef}
+              initial={{ opacity: 0, y: 16, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.95 }}
+              transition={{ type: "spring", bounce: 0.15, duration: 0.35 }}
+              className="pointer-events-auto w-[340px] max-h-[120px] overflow-y-auto rounded-xl border border-white/10 bg-zinc-900/90 px-4 py-3 text-sm text-white/80 shadow-lg backdrop-blur-md"
+            >
+              {capturedText ? (
+                <p className="whitespace-pre-wrap wrap-break-word">
+                  {capturedText}
+                  <span className="ml-1 inline-block h-3 w-0.5 animate-pulse bg-white/60" />
+                </p>
+              ) : (
+                <p className="text-white/40 italic">Listening…</p>
+              )}
+            </motion.div>
           )}
-        </button>
+        </AnimatePresence>
+
+        {/* toolbar */}
+        <div
+          ref={toolbarRef}
+          className="pointer-events-auto flex items-center justify-center rounded-full border border-white/10 bg-zinc-900/90 shadow-[0_8px_32px_rgba(0,0,0,0.4)] backdrop-blur-md overflow-hidden"
+          style={{ width: toolbarWidth, transition: "width 0.3s ease-out" }}
+        >
+          {mode === "idle" && (
+            <div className="flex items-center gap-4 px-5 py-3">
+              {/* face icon with pulsing emotion ring */}
+              <button
+                type="button"
+                className="relative flex items-center justify-center disabled:opacity-50"
+                onMouseDown={enterTranscribing}
+                onMouseUp={exitTranscribing}
+                onMouseLeave={() => {
+                  if (isTranscribingRef.current) exitTranscribing();
+                }}
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  enterTranscribing();
+                }}
+                onTouchEnd={(e) => {
+                  e.preventDefault();
+                  exitTranscribing();
+                }}
+                disabled={isProcessing || ttsPlaying || !isListening}
+                aria-label="Hold to speak"
+              >
+                <span
+                  className={cn(
+                    "absolute inset-[-4px] rounded-full animate-pulse ring-[3px]",
+                    emotionRing,
+                  )}
+                />
+                <span
+                  className={cn(
+                    "relative flex h-9 w-9 items-center justify-center rounded-full",
+                    emotionBg,
+                  )}
+                >
+                  <Smile className="h-5 w-5 text-white/90" />
+                </span>
+              </button>
+
+              {/* audio lines */}
+              <AudioLinesIcon
+                ref={audioLinesRef}
+                size={24}
+                className="text-white/60"
+              />
+
+              {/* pencil icon */}
+              <button
+                type="button"
+                onClick={enterTextMode}
+                disabled={isProcessing || ttsPlaying}
+                className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-white/10 transition-colors disabled:opacity-50"
+                aria-label="Type a prompt"
+              >
+                <Pencil className="h-4 w-4 text-white/70" />
+              </button>
+            </div>
+          )}
+
+          {mode === "text" && (
+            <div className="flex items-center gap-1.5 p-1.5 w-full">
+              <button
+                type="button"
+                onClick={exitTextMode}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full hover:bg-white/10 transition-colors"
+                aria-label="Back"
+              >
+                <ArrowLeft className="h-4 w-4 text-white/70" />
+              </button>
+              <textarea
+                ref={textareaRef}
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    submitText();
+                  }
+                }}
+                placeholder="Type your prompt…"
+                rows={1}
+                className="flex-1 resize-none bg-transparent text-sm text-white placeholder:text-white/40 outline-none py-2 px-2 min-h-[36px] max-h-[100px]"
+              />
+              <button
+                type="button"
+                onClick={submitText}
+                disabled={!textInput.trim()}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors disabled:opacity-30"
+                aria-label="Send"
+              >
+                <Send className="h-4 w-4 text-white/80" />
+              </button>
+            </div>
+          )}
+
+          {mode === "transcribing" && (
+            <div className="flex items-center gap-4 px-5 py-3">
+              {/* face icon (active recording) */}
+              <div className="relative flex items-center justify-center">
+                <span className="absolute inset-[-4px] rounded-full animate-ping ring-[3px] ring-red-500/40" />
+                <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-red-500/20">
+                  <Smile className="h-5 w-5 text-red-400" />
+                </span>
+              </div>
+
+              {/* expanded audio lines */}
+              <AudioLinesIcon
+                ref={audioLinesRef}
+                size={32}
+                className="text-white/80"
+              />
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* ── STT error ── */}
+      {sttError && (
+        <div className="fixed bottom-2 left-1/2 -translate-x-1/2 z-40 rounded-lg bg-red-500/90 px-3 py-1.5 text-xs text-white shadow-lg">
+          {sttError}
+        </div>
+      )}
     </>
   );
 }

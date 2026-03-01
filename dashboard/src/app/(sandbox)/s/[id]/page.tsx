@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAction, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { SandboxVoice } from "@/components/SandboxVoice";
-import { SandboxHumeTelemetry } from "@/components/SandboxHumeTelemetry";
+import {
+  SandboxHumeTelemetry,
+  emotionToDotColor,
+} from "@/components/SandboxHumeTelemetry";
 import { useSandboxPostHogOnLoad } from "@/components/SandboxPostHogTelemetry";
 import { Loader2 } from "lucide-react";
+import type { HumeEmotionMap } from "@/ux_telemetry";
 
 function useSandboxSessionId(): string {
   const ref = useRef<string | null>(null);
@@ -48,6 +52,11 @@ export default function SandboxPage() {
   const ensureSandboxOnWorker = useAction(api.sandboxes.ensureSandboxOnWorker);
   const [workerReady, setWorkerReady] = useState(false);
   const [workerError, setWorkerError] = useState<string | null>(null);
+  const [emotionColor, setEmotionColor] = useState<"green" | "yellow" | "red">("yellow");
+
+  const handleEmotionSample = useCallback((emotions: HumeEmotionMap) => {
+    setEmotionColor(emotionToDotColor(emotions));
+  }, []);
 
   const cachedSandboxRef = useRef<{ id: string; value: unknown } | null>(null);
   if (sandbox !== undefined && id) {
@@ -162,8 +171,12 @@ export default function SandboxPage() {
         title={`Sandbox ${id}`}
         onLoad={onSandboxFrameLoad}
       />
-      <SandboxVoice sandboxId={id} />
-      <SandboxHumeTelemetry sandboxId={id} sessionId={sessionId} />
+      <SandboxVoice sandboxId={id} emotionColor={emotionColor} />
+      <SandboxHumeTelemetry
+        sandboxId={id}
+        sessionId={sessionId}
+        onEmotionSample={handleEmotionSample}
+      />
     </>
   );
 }
