@@ -91,38 +91,42 @@ const SUPERMEMORY_API = 'https://api.supermemory.ai/v3';
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 
 /** Refinement system prompt: turns speech-to-text (or chat) into actionable instructions for the code agent. Edit here to change how voice/chat is refined before calling the LLM. */
-const GEMINI_REFINE_SYSTEM_PROMPT = `You are a prompt refiner for a code-generation AI. You receive raw user input from speech-to-text (or chat).
+const GEMINI_REFINE_SYSTEM_PROMPT = `You are a prompt refiner for a code-generation AI. You receive raw user input from speech-to-text (or chat), often long and rambling (e.g. multiple sentences, side comments, filler, or off-topic phrases like "push so Neil can", "make the sandbox analytics").
 
-Your job: turn it into a single, clear, actionable instruction for a frontend web developer AI. Rules:
-- Treat input as speech-to-text: fix stuttering, repetition, filler words ("um", "uh", "like", "you know", "so basically"), and obvious ASR errors. Remove any garbage or non-actionable content.
-- Output one or two short, concrete actionable items. Be specific (e.g. "Add a blue button" not "maybe add something").
+Your job: output ONE short, clear, actionable instruction for a frontend web developer AI.
+
+Rules:
+- Extract only the single clearest app change the user wants. Ignore preamble, side comments, and anything not about changing the app. Example: "spawn? And then once you're done push it so Neil can do the sandbox analytics. Okay so the font size looks too small. I can't see. It's way too small. Can this be bigger, please?" → "Make the text bigger."
+- Always refine. Do not echo the input unchanged. Fix speech-to-text artifacts: stuttering, repetition, filler ("um", "uh", "like", "you know"), and obvious ASR errors.
+- If the start of the input is garbled or does not match the rest, drop it and keep the clear intent (e.g. "...add a blue button" → "Add a blue button").
+- Output one short instruction only. Be specific (e.g. "Make the text bigger" or "Add a blue button"). No preamble, no quotes, no "The user wants..." — just the instruction.
 - Preserve the user's intent exactly. Do not add features they did not ask for.
-- If the input is empty, unintelligible, or not a request to change the app, output nothing or a single short rejection (e.g. "No clear request.").
-- Output ONLY the refined instruction(s). No preamble, no quotes, no "The user wants..." — just the instruction.`;
+- If the input is empty, unintelligible, or not a request to change the app, output exactly: "No clear request."`;
 
 async function refinePromptWithGemini(apiKey: string, userPrompt: string): Promise<string> {
   const trimmed = userPrompt.trim();
   if (!trimmed) return trimmed;
-  try {
-    const url = `${GEMINI_API}/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: GEMINI_REFINE_SYSTEM_PROMPT }] },
-        contents: [{ role: 'user', parts: [{ text: trimmed }] }],
-        generationConfig: { maxOutputTokens: 256, temperature: 0.2 },
-      }),
-    });
-    if (!res.ok) return trimmed;
-    const data = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    return text || trimmed;
-  } catch {
-    return trimmed;
+  const url = `${GEMINI_API}/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: GEMINI_REFINE_SYSTEM_PROMPT }] },
+      contents: [{ role: 'user', parts: [{ text: trimmed }] }],
+      generationConfig: { maxOutputTokens: 256, temperature: 0.2 },
+    }),
+  });
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Gemini refine failed ${res.status}: ${errBody.slice(0, 200)}`);
   }
+  const data = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    error?: { message?: string };
+  };
+  if (data.error) throw new Error(data.error.message || 'Gemini API error');
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  return text || trimmed;
 }
 
 function storeMemory(
@@ -328,14 +332,22 @@ export default {
 
     // ── API: refine prompt (Gemini) ──
     if (sub === 'api/refine' && request.method === 'POST') {
+      const body = (await request.json()) as { prompt?: string };
+      const raw = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+      const geminiKey = (env as unknown as Record<string, unknown>).GEMINI_API_KEY as string | undefined;
+      if (!geminiKey) {
+        return json({ refinedPrompt: raw || '', refinementSkipped: true });
+      }
       try {
-        const body = (await request.json()) as { prompt?: string };
-        const raw = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-        const geminiKey = (env as unknown as Record<string, unknown>).GEMINI_API_KEY as string | undefined;
-        const refined = geminiKey ? await refinePromptWithGemini(geminiKey, raw) : raw;
+        const refined = await refinePromptWithGemini(geminiKey, raw);
         return json({ refinedPrompt: refined || raw });
-      } catch {
-        return json({ refinedPrompt: '' });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return json({
+          refinedPrompt: raw,
+          refinementFailed: true,
+          refinementError: message.slice(0, 120),
+        });
       }
     }
 

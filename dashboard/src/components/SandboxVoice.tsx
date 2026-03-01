@@ -7,6 +7,8 @@ const TARGET_SAMPLE_RATE = 16000;
 
 /** Minimum character length for a segment to be sent (avoids empty/filler). */
 const MIN_SEGMENT_LENGTH = 2;
+/** For voice, only send the tail of very long transcripts so we don't send stale buffer preamble; refiner will clean the rest. */
+const MAX_VOICE_PROMPT_CHARS = 420;
 /** Patterns that are considered garbage and should not be sent. */
 const GARBAGE_REGEX = /^(?:um+|uh+|hm+|ah+|oh+|like|yeah|nope|okay|ok\s*)$|^[\s.,?!\-–—;:'"]+$/i;
 
@@ -275,7 +277,11 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
     setIsMicDown(false);
     const segmentText = [...segmentLinesRef.current];
     if (currentPartialRef.current.trim()) segmentText.push(currentPartialRef.current);
-    const raw = segmentText.join(" ").trim();
+    let raw = segmentText.join(" ").trim();
+    // Prefer the tail of long voice input so we don't send stale buffer preamble; refiner will extract the real instruction.
+    if (raw.length > MAX_VOICE_PROMPT_CHARS) {
+      raw = raw.slice(-MAX_VOICE_PROMPT_CHARS).trim();
+    }
     const text = filterGarbageAndEmpty(raw);
     segmentLinesRef.current = [];
     currentPartialRef.current = "";
