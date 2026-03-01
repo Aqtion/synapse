@@ -307,6 +307,7 @@
         <div class="spinner"></div>
         <p id="loadingText">Starting sandbox...</p>
         <div class="refined-box" id="refinedBox" style="display: none;">
+          <div class="refined-label" id="refinedStatus" style="display: none;"></div>
           <div class="refined-label">Gemini refinement</div>
           <div class="refined-from" id="refinedFrom" style="display: none;"></div>
           <div class="refined-label" id="refinedToLabel" style="display: none;">Sent to AI</div>
@@ -327,7 +328,7 @@
     const els = Object.fromEntries(
       ['messages','welcome','promptInput','sendBtn','previewFrame',
        'loadingOverlay','loadingText','statusDot','statusText',
-       'urlInput','fileBar','refinedBox','refinedText','refinedFrom','refinedToLabel'].map(id => [id, document.getElementById(id)])
+       'urlInput','fileBar','refinedBox','refinedText','refinedFrom','refinedToLabel','refinedStatus'].map(id => [id, document.getElementById(id)])
     );
 
     els.promptInput.addEventListener('input', () => {
@@ -377,9 +378,22 @@
       els.statusDot.className = 'status-dot ' + state;
       els.statusText.textContent = text;
     }
-    function showLoading(text, refinedPrompt, rawPrompt) {
+    function showLoading(text, refinedPrompt, rawPrompt, refinementSkipped, refinementFailed, refinementError) {
       els.loadingText.textContent = text;
       els.loadingOverlay.classList.remove('hidden');
+      if (els.refinedStatus) {
+        if (refinementSkipped) {
+          els.refinedStatus.textContent = 'Refinement skipped (no GEMINI_API_KEY in worker)';
+          els.refinedStatus.style.display = 'block';
+          els.refinedStatus.style.color = 'var(--warning, #b8860b)';
+        } else if (refinementFailed) {
+          els.refinedStatus.textContent = 'Refinement failed: ' + (refinementError || 'unknown error');
+          els.refinedStatus.style.display = 'block';
+          els.refinedStatus.style.color = 'var(--destructive, #dc2626)';
+        } else {
+          els.refinedStatus.style.display = 'none';
+        }
+      }
       if (refinedPrompt && els.refinedBox && els.refinedText) {
         els.refinedText.textContent = refinedPrompt;
         els.refinedBox.style.display = 'block';
@@ -406,6 +420,7 @@
       if (els.refinedBox) els.refinedBox.style.display = 'none';
       if (els.refinedFrom) els.refinedFrom.style.display = 'none';
       if (els.refinedToLabel) els.refinedToLabel.style.display = 'none';
+      if (els.refinedStatus) els.refinedStatus.style.display = 'none';
     }
 
     function renderFileTabs(files) {
@@ -467,9 +482,15 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt }),
       });
-      if (!res.ok) return prompt;
-      const data = await res.json();
-      return (data.refinedPrompt != null ? data.refinedPrompt : prompt).trim() || prompt;
+      const data = await res.json().catch(() => ({}));
+      var refined = data.refinedPrompt != null ? String(data.refinedPrompt).trim() : '';
+      return {
+        refinedPrompt: refined,
+        refinementSkipped: !!data.refinementSkipped,
+        refinementFailed: !!data.refinementFailed,
+        refinementError: typeof data.refinementError === 'string' ? data.refinementError : null,
+        refinementEmpty: !!data.refinementEmpty,
+      };
     }
 
     async function doPromptRequest(prompt, refinedPrompt) {
@@ -498,22 +519,46 @@
       setStatus('loading', 'Generating...');
       showLoading('Refining prompt...');
 
-      let refinedPrompt = prompt;
+      var refinedPrompt = '';
+      var refinementSkipped = false;
+      var refinementFailed = false;
+      var refinementError = null;
+      var refinementEmpty = false;
       try {
-        refinedPrompt = await doRefineRequest(prompt);
-      } catch (e) { /* use original */ }
-      refinedPrompt = (refinedPrompt != null ? refinedPrompt : prompt).trim() || prompt;
+        var refineResult = await doRefineRequest(prompt);
+        refinedPrompt = refineResult.refinedPrompt;
+        refinementSkipped = refineResult.refinementSkipped;
+        refinementFailed = refineResult.refinementFailed;
+        refinementError = refineResult.refinementError;
+        refinementEmpty = refineResult.refinementEmpty;
+      } catch (e) {
+        refinementFailed = true;
+        refinementError = e && e.message ? e.message : 'Network or request error';
+      }
+      var isEmpty = refinementEmpty || !refinedPrompt || refinedPrompt.length < 2;
+      console.log('[refine] input preview:', prompt.slice(0, 80) + (prompt.length > 80 ? '...' : ''), '| result:', isEmpty ? '(empty)' : refinedPrompt, '| skipping LLM:', isEmpty);
+
+      if (isEmpty) {
+        var noRequestMessage = refinedPrompt || 'Refinement returned nothing; not calling AI.';
+        addMessage(noRequestMessage, 'user');
+        history.push({ role: 'user', content: noRequestMessage });
+        showLoading('No actionable request.', refinedPrompt || noRequestMessage, prompt, refinementSkipped, refinementFailed, refinementError);
+        hideLoading();
+        generating = false;
+        els.sendBtn.disabled = !els.promptInput.value.trim();
+        return;
+      }
 
       addMessage(refinedPrompt, 'user');
       if (prompt !== refinedPrompt) addRefinedFromMessage(prompt, refinedPrompt);
       history.push({ role: 'user', content: refinedPrompt });
-      showLoading('AI is updating your app...', refinedPrompt, prompt);
+      showLoading('AI is updating your app...', refinedPrompt, prompt, refinementSkipped, refinementFailed, refinementError);
 
-      let data = null;
-      let lastErr = null;
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      var data = null;
+      var lastErr = null;
+      for (var attempt = 1; attempt <= 2; attempt++) {
         try {
-          if (attempt > 1) showLoading('Retrying (' + attempt + '/2)...', refinedPrompt, prompt);
+          if (attempt > 1) showLoading('Retrying (' + attempt + '/2)...', refinedPrompt, prompt, refinementSkipped, refinementFailed, refinementError);
           data = await doPromptRequest(prompt, refinedPrompt);
           break;
         } catch (err) {
@@ -523,8 +568,8 @@
       }
 
       if (data) {
-        const changedFiles = [...(data.written||[]), ...(data.deleted||[]).map(f => f+' (deleted)')];
-        const responseText = 'Updated ' + changedFiles.length + ' file(s): ' + changedFiles.join(', ');
+        var changedFiles = [...(data.written||[]), ...(data.deleted||[]).map(f => f+' (deleted)')];
+        var responseText = 'Updated ' + changedFiles.length + ' file(s): ' + changedFiles.join(', ');
         history.push({ role: 'assistant', content: 'Updated: ' + changedFiles.join(', ') });
         addMessage('Updated ' + changedFiles.length + ' file(s)', 'system', changedFiles);
         if (data.files) renderFileTabs(data.files);
@@ -535,7 +580,7 @@
           window.parent.postMessage({ type: 'SANDBOX_RESPONSE', text: responseText, success: true }, '*');
         }
       } else {
-        const errText = 'Error: ' + (lastErr ? lastErr.message : 'Unknown error');
+        var errText = 'Error: ' + (lastErr ? lastErr.message : 'Unknown error');
         addMessage(errText, 'error');
         setStatus('active', 'Sandbox ready');
         hideLoading();
