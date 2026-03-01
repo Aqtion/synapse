@@ -106,11 +106,17 @@ type StatusUpdate = { id: string; text: string };
 type SandboxVoiceProps = {
   sandboxId: string;
   emotionColor?: "green" | "yellow" | "red";
+  /** When provided, use this analytics session for transcript (and heartbeat). Enables analytics graph + transcript to show video-feed data. */
+  analyticsSessionId?: string | null;
 };
+
+const TRANSCRIPT_HEARTBEAT_INTERVAL_MS = 5000;
+const TRANSCRIPT_HEARTBEAT_PLACEHOLDER = "…";
 
 export function SandboxVoice({
   sandboxId,
   emotionColor = "yellow",
+  analyticsSessionId,
 }: SandboxVoiceProps) {
   const [isListening, setIsListening] = useState(false);
   const [sttError, setSttError] = useState<string | null>(null);
@@ -152,6 +158,34 @@ export function SandboxVoice({
   const endVoiceSessionMutation = useMutation(api.analytics.endVoiceSession);
   const sandboxIdRef = useRef(sandboxId);
   sandboxIdRef.current = sandboxId;
+
+  // Use analytics session from parent when provided (same session as video-feed emotions).
+  useEffect(() => {
+    if (analyticsSessionId) {
+      voiceSessionIdRef.current = analyticsSessionId as Id<"sandboxAnalyticsSessions">;
+      voiceSessionStartPromiseRef.current = null;
+    }
+  }, [analyticsSessionId]);
+
+  // Transcript heartbeat every 5s so analytics transcript panel populates.
+  useEffect(() => {
+    if (!analyticsSessionId && !voiceSessionIdRef.current) return;
+    const run = () => {
+      const sid = voiceSessionIdRef.current;
+      if (!sid) return;
+      insertTranscriptEntryMutation({
+        sandboxId: sandboxIdRef.current,
+        timestampMs: Date.now(),
+        text: TRANSCRIPT_HEARTBEAT_PLACEHOLDER,
+        sessionId: sid,
+        fromMic: false,
+        isAiPrompt: false,
+      }).catch(() => {});
+    };
+    run();
+    const interval = setInterval(run, TRANSCRIPT_HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [analyticsSessionId, insertTranscriptEntryMutation]);
 
   // ── helpers ──
 

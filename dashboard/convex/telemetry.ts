@@ -1,5 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { humePayloadToQuadrantScores } from "./emotionQuadrants";
 
 export const insertHumeSample = mutation({
   args: {
@@ -15,6 +16,16 @@ export const insertHumeSample = mutation({
       timestampMs: args.timestampMs,
       source: "hume",
       payload: args.rawPayload,
+    });
+    const quadrants = humePayloadToQuadrantScores(args.rawPayload);
+    await ctx.db.insert("sandboxEmotionSamples", {
+      sandboxId: args.sandboxId,
+      sessionId: args.sessionId,
+      timestampMs: args.timestampMs,
+      lowEnergyUnpleasant: quadrants.lowEnergyUnpleasant,
+      lowEnergyPleasant: quadrants.lowEnergyPleasant,
+      highEnergyPleasant: quadrants.highEnergyPleasant,
+      highEnergyUnpleasant: quadrants.highEnergyUnpleasant,
     });
   },
 });

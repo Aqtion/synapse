@@ -7,7 +7,7 @@ import { api } from "convex/_generated/api";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmotionTimelineChart } from "@/components/analytics/EmotionTimelineChart";
-import { AnalyticsTranscript } from "@/components/analytics/AnalyticsTranscript";
+import { AnalyticsTranscript, type TranscriptEntry } from "@/components/analytics/AnalyticsTranscript";
 import { EmotionPieCard } from "@/components/analytics/EmotionPieCard";
 import { SupermemorySummaryCard } from "@/components/analytics/SupermemorySummaryCard";
 import { AiPromptsAndLinesCard } from "@/components/analytics/AiPromptsAndLinesCard";
@@ -31,11 +31,15 @@ export default function SandboxAnalyticsPage() {
   );
   const emotionSamples = useQuery(
     api.analytics.getEmotionSamples,
-    sandbox_id && session ? { sandboxId: sandbox_id, sessionId: session._id } : "skip",
+    sandbox_id && session
+      ? { sandboxId: sandbox_id, sessionId: String(session._id) }
+      : "skip",
   );
   const transcript = useQuery(
     api.analytics.getTranscript,
-    sandbox_id && session ? { sandboxId: sandbox_id, sessionId: session._id } : "skip",
+    sandbox_id && session
+      ? { sandboxId: sandbox_id, sessionId: String(session._id) }
+      : "skip",
   );
   const stats = useQuery(
     api.analytics.getStatsForSandbox,
@@ -67,6 +71,16 @@ export default function SandboxAnalyticsPage() {
     return Math.max(sessionStartMs, Math.min(sessionEndMs, playheadTimeMs || sessionStartMs));
   }, [playheadTimeMs, sessionStartMs, sessionEndMs]);
 
+  const transcriptEntries: TranscriptEntry[] = useMemo(() => {
+    const raw = transcript ?? [];
+    return raw.map((doc) => ({
+      timestampMs: doc.timestampMs,
+      text: doc.text,
+      isAiPrompt: doc.isAiPrompt,
+      fromMic: doc.fromMic,
+    }));
+  }, [transcript]);
+
   if (!sandbox_id || !user_id || !project_id) return null;
 
   if (sandbox === undefined) {
@@ -79,7 +93,9 @@ export default function SandboxAnalyticsPage() {
 
   if (sandbox === null) return null;
 
-  const hasSession = session != null && (emotionSamples?.length ?? 0) > 0;
+  const hasSession =
+    session != null &&
+    ((emotionSamples?.length ?? 0) > 0 || (transcript?.length ?? 0) > 0);
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6">
@@ -116,7 +132,7 @@ export default function SandboxAnalyticsPage() {
             </div>
             <div className="min-h-0 h-full rounded-lg border bg-muted/30 overflow-hidden flex flex-col">
               <AnalyticsTranscript
-                entries={transcript ?? []}
+                entries={transcriptEntries}
                 currentTimeMs={playheadClamped}
                 sessionStartMs={sessionStartMs}
                 onSeek={setPlayheadTimeMs}

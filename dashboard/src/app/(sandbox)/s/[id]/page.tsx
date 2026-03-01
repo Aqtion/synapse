@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { SandboxVoice } from "@/components/SandboxVoice";
 import {
@@ -43,6 +43,12 @@ export default function SandboxPage() {
   const sandbox = useQuery(
     api.sandboxes.getSandboxForCurrentUser,
     id ? { sandboxId: id } : "skip",
+  );
+  const getOrCreateAnalyticsSession = useMutation(
+    api.analytics.getOrCreateAnalyticsSession,
+  );
+  const [analyticsSessionId, setAnalyticsSessionId] = useState<string | null>(
+    null,
   );
   const ensureSandboxOnWorker = useAction(api.sandboxes.ensureSandboxOnWorker);
   const [workerReady, setWorkerReady] = useState(false);
@@ -95,6 +101,21 @@ export default function SandboxPage() {
       cancelled = true;
     };
   }, [id, sandbox, ensureSandboxOnWorker, workerReady, workerError]);
+
+  useEffect(() => {
+    if (!id || sandbox === undefined || sandbox === null) return;
+    let cancelled = false;
+    getOrCreateAnalyticsSession({ sandboxId: id })
+      .then((sessionId) => {
+        if (!cancelled) setAnalyticsSessionId(sessionId);
+      })
+      .catch(() => {
+        if (!cancelled) setAnalyticsSessionId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, sandbox, getOrCreateAnalyticsSession]);
 
   if (!id) {
     return (
@@ -161,10 +182,14 @@ export default function SandboxPage() {
         title={`Sandbox ${id}`}
         onLoad={onSandboxFrameLoad}
       />
-      <SandboxVoice sandboxId={id} emotionColor={emotionColor} />
+      <SandboxVoice
+        sandboxId={id}
+        emotionColor={emotionColor}
+        analyticsSessionId={analyticsSessionId}
+      />
       <SandboxHumeTelemetry
         sandboxId={id}
-        sessionId={sessionId}
+        sessionId={analyticsSessionId ?? undefined}
         onEmotionSample={handleEmotionSample}
       />
       <SandboxMouseTelemetry sandboxId={id} sessionId={sessionId} />

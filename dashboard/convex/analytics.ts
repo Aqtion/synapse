@@ -153,6 +153,39 @@ export const endVoiceSession = mutation({
   },
 });
 
+/** Consider a session "recent" if it ended within this many ms. */
+const RECENT_SESSION_MS = 30 * 60 * 1000;
+
+/**
+ * Get or create an analytics session for a sandbox. Use this when the sandbox page
+ * loads so the same session can be used for video-feed emotions and transcript.
+ * Returns the session id (string) to pass to telemetry and insertTranscriptEntry.
+ */
+export const getOrCreateAnalyticsSession = mutation({
+  args: { sandboxId: v.string() },
+  handler: async (ctx, args) => {
+    const canAccess = await userCanAccessSandboxMutation(ctx, args.sandboxId);
+    if (!canAccess) throw new Error("You do not have access to this sandbox");
+    const now = Date.now();
+    const sessions = await ctx.db
+      .query("sandboxAnalyticsSessions")
+      .withIndex("by_sandboxId", (q) => q.eq("sandboxId", args.sandboxId))
+      .collect();
+    const recent = sessions
+      .filter((s) => now - s.endedAt <= RECENT_SESSION_MS)
+      .sort((a, b) => b.endedAt - a.endedAt);
+    if (recent.length > 0) {
+      return String(recent[0]!._id);
+    }
+    const sessionId = await ctx.db.insert("sandboxAnalyticsSessions", {
+      sandboxId: args.sandboxId,
+      startedAt: now,
+      endedAt: now,
+    });
+    return String(sessionId);
+  },
+});
+
 /**
  * Seeds analytics data for a sandbox (1fps emotion samples, transcript, session, stats).
  * Call from dashboard or Convex dashboard for a given sandboxId.
