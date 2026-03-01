@@ -108,9 +108,12 @@ export async function refinePrompt(params: {
   sandboxId: string;
   prompt: string;
 }): Promise<RefineResponse> {
-  return callWorker<RefineResponse>(`/s/${params.sandboxId}/api/refine`, {
+  console.log("[refine] prompt sent to worker (transcribed):", params.prompt);
+  const result = await callWorker<RefineResponse>(`/s/${params.sandboxId}/api/refine`, {
     method: "POST",
     body: JSON.stringify({ prompt: params.prompt }),
   });
+  console.log("[refine] refinedPrompt received from worker:", result.refinedPrompt);
+  return result;
 }
 

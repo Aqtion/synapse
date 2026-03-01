@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "convex/_generated/api";
+import type { Id } from "convex/_generated/dataModel";
 import { motion, AnimatePresence } from "framer-motion";
-import { Smile, Pencil, ArrowLeft, Send } from "lucide-react";
+import { Smile, Pencil, ArrowLeft, Send, Loader2 } from "lucide-react";
 import { refinePrompt, runPrompt } from "@/lib/workerClient";
 import {
   AudioLinesIcon,
@@ -146,8 +149,18 @@ export function SandboxVoice({
   const transcriptPanelRef = useRef<HTMLDivElement>(null);
   const committedRef = useRef("");
   const partialRef = useRef("");
-  const captureStartRef = useRef(0);
   const isTranscribingRef = useRef(false);
+  /** Accumulates only committed segments received while the user is holding (shift+space or hold-to-speak). Sent to AI on release. */
+  const capturedDuringHoldRef = useRef("");
+  const [capturedDuringHoldState, setCapturedDuringHoldState] = useState("");
+  const voiceSessionIdRef = useRef<Id<"sandboxAnalyticsSessions"> | null>(null);
+  const voiceSessionStartPromiseRef = useRef<Promise<Id<"sandboxAnalyticsSessions">> | null>(null);
+
+  const startVoiceSessionMutation = useMutation(api.analytics.startVoiceSession);
+  const insertTranscriptEntryMutation = useMutation(api.analytics.insertTranscriptEntry);
+  const endVoiceSessionMutation = useMutation(api.analytics.endVoiceSession);
+  const sandboxIdRef = useRef(sandboxId);
+  sandboxIdRef.current = sandboxId;
 
   // ── helpers ──
 
@@ -191,6 +204,11 @@ export function SandboxVoice({
   }, []);
 
   // ── request pipeline (refine → run) ──
+  //
+  // Refinement pipeline: raw input (voice or text) → POST /api/refine (Gemini turns
+  // speech/chat into one short instruction) → if not rejected, POST /api/prompt with
+  // refinedPrompt → worker uses refinedPrompt as USER REQUEST for the code LLM. See
+  // worker src/index.ts api/refine and api/prompt.
 
   const processPrompt = useCallback(
     async (rawText: string, source: "voice" | "text") => {
@@ -260,12 +278,17 @@ export function SandboxVoice({
     mountRef.current = true;
     return () => {
       mountRef.current = false;
+      if (voiceSessionIdRef.current) {
+        endVoiceSessionMutation({ sessionId: voiceSessionIdRef.current }).catch(
+          () => {},
+        );
+      }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
     };
-  }, []);
+  }, [endVoiceSessionMutation]);
 
   // ── STT WebSocket ──
 
@@ -315,6 +338,46 @@ export function SandboxVoice({
               committed: committedRef.current,
               partial: "",
             });
+            // While user is holding, accumulate this segment into the "during hold" buffer (only this gets sent to AI)
+            if (isTranscribingRef.current) {
+              capturedDuringHoldRef.current +=
+                (capturedDuringHoldRef.current ? " " : "") + text;
+              setCapturedDuringHoldState(capturedDuringHoldRef.current);
+            }
+            // Persist to Convex sandboxTranscriptEntries
+            const sbId = sandboxIdRef.current;
+            const insertEntry = insertTranscriptEntryMutation;
+            if (voiceSessionIdRef.current) {
+              insertEntry({
+                sandboxId: sbId,
+                timestampMs: Date.now(),
+                text,
+                sessionId: voiceSessionIdRef.current,
+                fromMic: true,
+                isAiPrompt: false,
+              }).catch(() => {});
+            } else {
+              if (!voiceSessionStartPromiseRef.current) {
+                voiceSessionStartPromiseRef.current = startVoiceSessionMutation({
+                  sandboxId: sbId,
+                }).then((id) => {
+                  voiceSessionIdRef.current = id;
+                  return id;
+                });
+              }
+              voiceSessionStartPromiseRef.current
+                .then((sessionId) => {
+                  insertEntry({
+                    sandboxId: sbId,
+                    timestampMs: Date.now(),
+                    text,
+                    sessionId,
+                    fromMic: true,
+                    isAiPrompt: false,
+                  });
+                })
+                .catch(() => {});
+            }
           } else if (msg.type === "error") {
             setSttError(msg.message || "STT error");
           } else if (msg.type === "upstream_closed") {
@@ -461,7 +524,11 @@ export function SandboxVoice({
 
   const enterTranscribing = useCallback(() => {
     if (isProcessing || ttsPlaying || modeRef.current === "text") return;
-    captureStartRef.current = committedRef.current.length;
+    // Start a fresh buffer for this hold; only what arrives from now until release is sent to AI
+    capturedDuringHoldRef.current = "";
+    setCapturedDuringHoldState("");
+    partialRef.current = "";
+    setTranscript((prev) => ({ ...prev, partial: "" }));
     isTranscribingRef.current = true;
     setMode("transcribing");
     modeRef.current = "transcribing";
@@ -473,9 +540,10 @@ export function SandboxVoice({
     setMode("idle");
     modeRef.current = "idle";
 
-    const newCommitted = committedRef.current.slice(captureStartRef.current);
+    // Send only what was accumulated during this hold (committed + current partial)
     let captured = (
-      newCommitted + (partialRef.current ? " " + partialRef.current : "")
+      capturedDuringHoldRef.current +
+      (partialRef.current ? " " + partialRef.current : "")
     ).trim();
     if (captured.length > MAX_VOICE_PROMPT_CHARS) {
       captured = captured.slice(-MAX_VOICE_PROMPT_CHARS).trim();
@@ -546,7 +614,7 @@ export function SandboxVoice({
   const capturedText =
     mode === "transcribing"
       ? (
-          transcript.committed.slice(captureStartRef.current) +
+          capturedDuringHoldState +
           (transcript.partial ? " " + transcript.partial : "")
         ).trim()
       : "";
@@ -570,6 +638,36 @@ export function SandboxVoice({
 
   return (
     <>
+      {/* ── AI loading overlay (when AI is making edits) ── */}
+      <AnimatePresence>
+        {isProcessing && (
+          <motion.div
+            key="ai-loading-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+              aria-hidden
+            />
+            <div className="relative flex flex-col items-center gap-4 rounded-2xl border border-white/10 bg-zinc-900/95 px-8 py-6 shadow-xl">
+              <Loader2
+                className="h-10 w-10 animate-spin text-white/90"
+                aria-hidden
+              />
+              <p className="text-sm font-medium text-white/90">
+                AI is updating your app…
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── status updates zone ── */}
       <AnimatePresence>
         {(statusUpdates.length > 0 || (isProcessing && refinedPromptDisplay)) && (

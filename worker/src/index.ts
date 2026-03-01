@@ -108,6 +108,7 @@ Rules:
 async function refinePromptWithGemini(apiKey: string, userPrompt: string): Promise<string> {
   const trimmed = userPrompt.trim();
   if (!trimmed) return trimmed;
+  console.log('[gemini-refine] SENT (transcribed prompt):', trimmed);
   const url = `${GEMINI_API}/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -118,16 +119,21 @@ async function refinePromptWithGemini(apiKey: string, userPrompt: string): Promi
       generationConfig: { maxOutputTokens: 256, temperature: 0.2 },
     }),
   });
-  if (!res.ok) {
-    const errBody = await res.text();
-    throw new Error(`Gemini refine failed ${res.status}: ${errBody.slice(0, 200)}`);
-  }
   const data = (await res.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     error?: { message?: string };
   };
-  if (data.error) throw new Error(data.error.message || 'Gemini API error');
+  if (!res.ok) {
+    const errBody = JSON.stringify(data);
+    console.log('[gemini-refine] ERROR response:', res.status, errBody.slice(0, 500));
+    throw new Error(`Gemini refine failed ${res.status}: ${errBody.slice(0, 200)}`);
+  }
+  if (data.error) {
+    console.log('[gemini-refine] API error:', data.error);
+    throw new Error(data.error.message || 'Gemini API error');
+  }
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  console.log('[gemini-refine] RECEIVED:', text ?? '(empty or missing)');
   return text || trimmed;
 }
 
@@ -343,12 +349,14 @@ export default {
     if (sub === 'api/refine' && request.method === 'POST') {
       const body = (await request.json()) as { prompt?: string };
       const raw = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+      if (raw) console.log('[refine] received:', raw.slice(0, 80) + (raw.length > 80 ? '...' : ''));
       const geminiKey = (env as unknown as Record<string, unknown>).GEMINI_API_KEY as string | undefined;
       if (!geminiKey) {
         return json({ refinedPrompt: raw || '', refinementSkipped: true });
       }
       try {
         const refined = await refinePromptWithGemini(geminiKey, raw);
+        if (refined && refined !== raw) console.log('[refine] →', refined.slice(0, 80) + (refined.length > 80 ? '...' : ''));
         return json({ refinedPrompt: refined || raw });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -376,6 +384,7 @@ export default {
             : geminiKey
               ? await refinePromptWithGemini(geminiKey, prompt)
               : prompt;
+        if (promptToUse) console.log('[prompt] using instruction:', promptToUse.slice(0, 80) + (promptToUse.length > 80 ? '...' : ''));
 
         const noActionPhrases = [
           'no clear request',
