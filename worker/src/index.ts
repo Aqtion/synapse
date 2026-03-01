@@ -267,8 +267,10 @@ export default {
         let filePath = sub.replace(/^preview\/?/, '') || 'index.html';
         if (filePath.endsWith('/')) filePath += 'index.html';
         const file = await sandbox.readFile(`${APP_DIR}/${filePath}`);
+        const contentType = mimeFor(filePath);
+
         return new Response(file.content, {
-          headers: corsHeaders({ 'Content-Type': mimeFor(filePath) }),
+          headers: corsHeaders({ 'Content-Type': contentType }),
         });
       } catch {
         return new Response('File not found', { status: 404 });

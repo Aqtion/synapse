@@ -46,7 +46,6 @@ export default function SandboxPage() {
     id ? { sandboxId: id } : "skip",
   );
   const ensureSandboxOnWorker = useAction(api.sandboxes.ensureSandboxOnWorker);
-
   const [workerReady, setWorkerReady] = useState(false);
   const [workerError, setWorkerError] = useState<string | null>(null);
 
