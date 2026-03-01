@@ -227,6 +227,11 @@
     }
     .loading-overlay .refined-label { font-size: 10px; color: var(--text-dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
     .loading-overlay .refined-text { font-size: 12px; color: var(--text); line-height: 1.45; }
+    .loading-overlay .refined-from { font-size: 11px; color: var(--text-dim); margin-bottom: 6px; line-height: 1.4; }
+    .message.refined-from {
+      font-size: 11px; color: var(--text-dim); padding: 6px 10px;
+      border-left: 3px solid var(--accent); background: var(--bg);
+    }
   </style>
 </head>
 <body>
@@ -302,7 +307,9 @@
         <div class="spinner"></div>
         <p id="loadingText">Starting sandbox...</p>
         <div class="refined-box" id="refinedBox" style="display: none;">
-          <div class="refined-label">Refined prompt sent to AI</div>
+          <div class="refined-label">Gemini refinement</div>
+          <div class="refined-from" id="refinedFrom" style="display: none;"></div>
+          <div class="refined-label" id="refinedToLabel" style="display: none;">Sent to AI</div>
           <div class="refined-text" id="refinedText"></div>
         </div>
       </div>
@@ -320,7 +327,7 @@
     const els = Object.fromEntries(
       ['messages','welcome','promptInput','sendBtn','previewFrame',
        'loadingOverlay','loadingText','statusDot','statusText',
-       'urlInput','fileBar','refinedBox','refinedText'].map(id => [id, document.getElementById(id)])
+       'urlInput','fileBar','refinedBox','refinedText','refinedFrom','refinedToLabel'].map(id => [id, document.getElementById(id)])
     );
 
     els.promptInput.addEventListener('input', () => {
@@ -356,23 +363,49 @@
       els.messages.scrollTop = els.messages.scrollHeight;
     }
 
+    function addRefinedFromMessage(rawPrompt, refinedPrompt) {
+      if (!rawPrompt || !refinedPrompt || rawPrompt === refinedPrompt) return;
+      if (els.welcome) els.welcome.style.display = 'none';
+      const div = document.createElement('div');
+      div.className = 'message refined-from';
+      div.textContent = 'From: ' + rawPrompt + ' \u2192 ' + refinedPrompt;
+      els.messages.appendChild(div);
+      els.messages.scrollTop = els.messages.scrollHeight;
+    }
+
     function setStatus(state, text) {
       els.statusDot.className = 'status-dot ' + state;
       els.statusText.textContent = text;
     }
-    function showLoading(text, refinedPrompt) {
+    function showLoading(text, refinedPrompt, rawPrompt) {
       els.loadingText.textContent = text;
       els.loadingOverlay.classList.remove('hidden');
       if (refinedPrompt && els.refinedBox && els.refinedText) {
         els.refinedText.textContent = refinedPrompt;
         els.refinedBox.style.display = 'block';
+        if (els.refinedFrom && els.refinedToLabel) {
+          if (rawPrompt && rawPrompt !== refinedPrompt) {
+            els.refinedFrom.textContent = 'From: ' + rawPrompt;
+            els.refinedFrom.style.display = 'block';
+            els.refinedToLabel.textContent = 'To (sent to AI):';
+            els.refinedToLabel.style.display = 'block';
+          } else {
+            els.refinedFrom.style.display = 'none';
+            els.refinedToLabel.textContent = 'Refined prompt sent to AI';
+            els.refinedToLabel.style.display = 'block';
+          }
+        }
       } else if (els.refinedBox) {
         els.refinedBox.style.display = 'none';
+        if (els.refinedFrom) els.refinedFrom.style.display = 'none';
+        if (els.refinedToLabel) els.refinedToLabel.style.display = 'none';
       }
     }
     function hideLoading() {
       els.loadingOverlay.classList.add('hidden');
       if (els.refinedBox) els.refinedBox.style.display = 'none';
+      if (els.refinedFrom) els.refinedFrom.style.display = 'none';
+      if (els.refinedToLabel) els.refinedToLabel.style.display = 'none';
     }
 
     function renderFileTabs(files) {
@@ -462,8 +495,6 @@
       els.sendBtn.disabled = true;
       els.promptInput.value = '';
       els.promptInput.style.height = 'auto';
-      addMessage(prompt, 'user');
-      history.push({ role: 'user', content: prompt });
       setStatus('loading', 'Generating...');
       showLoading('Refining prompt...');
 
@@ -471,13 +502,18 @@
       try {
         refinedPrompt = await doRefineRequest(prompt);
       } catch (e) { /* use original */ }
-      showLoading('AI is updating your app...', refinedPrompt);
+      refinedPrompt = (refinedPrompt != null ? refinedPrompt : prompt).trim() || prompt;
+
+      addMessage(refinedPrompt, 'user');
+      if (prompt !== refinedPrompt) addRefinedFromMessage(prompt, refinedPrompt);
+      history.push({ role: 'user', content: refinedPrompt });
+      showLoading('AI is updating your app...', refinedPrompt, prompt);
 
       let data = null;
       let lastErr = null;
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-          if (attempt > 1) showLoading('Retrying (' + attempt + '/2)...', refinedPrompt);
+          if (attempt > 1) showLoading('Retrying (' + attempt + '/2)...', refinedPrompt, prompt);
           data = await doPromptRequest(prompt, refinedPrompt);
           break;
         } catch (err) {

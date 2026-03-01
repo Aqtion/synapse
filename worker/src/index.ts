@@ -90,6 +90,7 @@ const SANDBOX_ID_RE = /^\/s\/([a-z0-9][a-z0-9-]{0,28}[a-z0-9]?)\//;
 const SUPERMEMORY_API = 'https://api.supermemory.ai/v3';
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 
+/** Refinement system prompt: turns speech-to-text (or chat) into actionable instructions for the code agent. Edit here to change how voice/chat is refined before calling the LLM. */
 const GEMINI_REFINE_SYSTEM_PROMPT = `You are a prompt refiner for a code-generation AI. You receive raw user input from speech-to-text (or chat).
 
 Your job: turn it into a single, clear, actionable instruction for a frontend web developer AI. Rules:

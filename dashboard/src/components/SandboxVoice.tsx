@@ -58,7 +58,6 @@ type SandboxVoiceProps = {
 
 export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
   const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
-  const [segmentLines, setSegmentLines] = useState<string[]>([]);
   const [isMicDown, setIsMicDown] = useState(false);
   const [sttError, setSttError] = useState<string | null>(null);
   const [ttsPlaying, setTtsPlaying] = useState(false);
@@ -69,6 +68,7 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const isMicDownRef = useRef(false);
   const currentPartialRef = useRef("");
+  const segmentLinesRef = useRef<string[]>([]);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountRef = useRef(true);
 
@@ -93,7 +93,7 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
       const rest = prev.slice(0, -1).filter((l) => !l.startsWith("…"));
       return [...rest, text];
     });
-    if (isMicDownRef.current) setSegmentLines((prev) => [...prev, text]);
+    if (isMicDownRef.current) segmentLinesRef.current = [...segmentLinesRef.current, text];
   }, []);
 
   useEffect(() => {
@@ -264,7 +264,8 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
   const handleMicDown = useCallback(() => {
     isMicDownRef.current = true;
     currentPartialRef.current = "";
-    setSegmentLines([]);
+    segmentLinesRef.current = [];
+    setTranscriptLines([]);
     setIsMicDown(true);
   }, []);
 
@@ -272,11 +273,11 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
     if (!isMicDown) return;
     isMicDownRef.current = false;
     setIsMicDown(false);
-    const segmentText = [...segmentLines];
+    const segmentText = [...segmentLinesRef.current];
     if (currentPartialRef.current.trim()) segmentText.push(currentPartialRef.current);
     const raw = segmentText.join(" ").trim();
     const text = filterGarbageAndEmpty(raw);
-    setSegmentLines([]);
+    segmentLinesRef.current = [];
     currentPartialRef.current = "";
     if (text == null || !text) return;
 
@@ -284,7 +285,7 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
     if (iframe?.contentWindow) {
       iframe.contentWindow.postMessage({ type: "VOICE_PROMPT", text }, "*");
     }
-  }, [isMicDown, segmentLines, getIframe]);
+  }, [isMicDown, getIframe]);
 
   const displayLines = transcriptLines;
   const popupContent = displayLines.length === 0 && !currentPartialRef.current ? "" : displayLines.join(" ");
