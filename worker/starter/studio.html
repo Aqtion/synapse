@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{SANDBOX_ID}} &mdash; Sandbox Studio</title>
+  <title>{{SANDBOX_ID}} &mdash; Synapse </title>
   <style>
     :root {
       --bg: #0b0d11;
@@ -29,184 +29,68 @@
     }
 
     .app {
-      display: grid;
-      grid-template-columns: 380px 1fr;
-      grid-template-rows: 52px 1fr;
+      position: relative;
+      width: 100vw;
       height: 100vh;
+      background: var(--bg);
+    }
+    .preview {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+    }
+    .preview iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: white;
     }
 
-    header {
-      grid-column: 1 / -1;
+    .floating-toolbar {
+      position: absolute;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      gap: 12px;
+      gap: 8px;
+      background: rgba(20, 23, 30, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px;
+      z-index: 30;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
     }
-    .header-left { display: flex; align-items: center; gap: 12px; }
-    .back-btn {
-      display: flex; align-items: center; justify-content: center;
-      width: 30px; height: 30px;
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: 7px; color: var(--text-dim); cursor: pointer;
-      transition: all .15s; text-decoration: none;
-    }
-    .back-btn:hover { color: var(--text); border-color: var(--accent); }
-    header .logo {
-      display: flex; align-items: center; gap: 8px;
-      font-weight: 700; font-size: 14px; letter-spacing: -.3px;
-    }
-    header .logo .icon {
-      width: 24px; height: 24px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-bright));
-      border-radius: 6px; display: flex; align-items: center; justify-content: center;
-      font-size: 12px; color: #fff;
-    }
-    .sandbox-name {
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      font-size: 12px; color: var(--text-dim);
-      padding: 3px 10px; background: var(--bg);
-      border: 1px solid var(--border); border-radius: 6px;
-    }
-    .status-badge {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 11px; color: var(--text-dim);
-      padding: 4px 11px; background: var(--bg);
-      border-radius: 20px; border: 1px solid var(--border);
-    }
-    .status-dot {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--text-dim);
-    }
-    .status-dot.active { background: var(--green); }
-    .status-dot.loading {
-      background: var(--accent-bright);
-      animation: pulse 1.2s ease-in-out infinite;
-    }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
-
-    .panel {
-      display: flex; flex-direction: column;
-      border-right: 1px solid var(--border);
-      background: var(--surface); overflow: hidden;
-    }
-
-    .file-bar {
-      display: flex; gap: 2px; padding: 8px 12px 0;
-      flex-wrap: wrap; border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-    .file-tab {
-      padding: 5px 10px; font-size: 11px;
-      color: var(--text-dim); background: var(--bg);
-      border: 1px solid var(--border); border-bottom: none;
-      border-radius: 6px 6px 0 0; cursor: pointer;
+    .toolbar-btn {
+      width: 36px;
+      height: 36px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
       transition: all .15s;
-      font-family: 'SF Mono', 'Fira Code', monospace;
     }
-    .file-tab:hover { color: var(--text); }
-    .file-tab.active {
-      color: var(--accent-bright); background: var(--surface-hover);
-      border-color: var(--accent);
+    .toolbar-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--border);
     }
-
-    .messages {
-      flex: 1; overflow-y: auto; padding: 14px;
-      display: flex; flex-direction: column; gap: 10px;
+    .toolbar-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
-    .messages::-webkit-scrollbar { width: 5px; }
-    .messages::-webkit-scrollbar-track { background: transparent; }
-    .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
-
-    .message {
-      padding: 10px 12px; border-radius: var(--radius);
-      font-size: 13px; line-height: 1.55; max-width: 95%; word-wrap: break-word;
-    }
-    .message.user {
-      background: linear-gradient(135deg, var(--accent), var(--accent-bright));
-      color: white; align-self: flex-end; border-bottom-right-radius: 4px;
-    }
-    .message.system {
-      background: var(--bg); border: 1px solid var(--border);
-      color: var(--text-dim); align-self: flex-start; border-bottom-left-radius: 4px;
-    }
-    .message.system .file-list {
-      margin-top: 4px;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      font-size: 11px; color: var(--accent-bright);
-    }
-    .message.error {
-      background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.3);
-      color: var(--red); align-self: flex-start;
-    }
-
-    .welcome {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      text-align: center; padding: 28px; gap: 10px;
-    }
-    .welcome h2 { font-size: 17px; font-weight: 600; }
-    .welcome p { font-size: 12.5px; color: var(--text-dim); line-height: 1.6; max-width: 260px; }
-    .suggestions { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; width: 100%; max-width: 290px; }
-    .suggestion {
-      padding: 9px 12px; background: var(--bg); border: 1px solid var(--border);
-      border-radius: 9px; font-size: 12.5px; color: var(--text-dim);
-      cursor: pointer; transition: all .15s; text-align: left;
-    }
-    .suggestion:hover { background: var(--surface-hover); border-color: var(--accent); color: var(--text); }
-
-    .input-area { padding: 12px; border-top: 1px solid var(--border); }
-    .input-row { display: flex; gap: 8px; align-items: flex-end; }
-    .input-row textarea {
-      flex: 1; resize: none; background: var(--bg);
-      border: 1px solid var(--border); border-radius: 10px;
-      padding: 10px 12px; color: var(--text); font-size: 13px;
-      font-family: inherit; line-height: 1.5; max-height: 120px;
-      outline: none; transition: border-color .15s;
-    }
-    .input-row textarea:focus { border-color: var(--accent); }
-    .input-row textarea::placeholder { color: var(--text-dim); }
-    .send-btn {
-      width: 40px; height: 40px; border: none;
-      background: linear-gradient(135deg, var(--accent), var(--accent-bright));
-      color: white; border-radius: 10px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      transition: all .15s; flex-shrink: 0;
-    }
-    .send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(108,114,203,.4); }
-    .send-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; box-shadow: none; }
-    .send-btn svg { width: 17px; height: 17px; }
-
-    .preview {
-      position: relative; background: var(--bg);
-      display: flex; flex-direction: column;
-    }
-    .preview-bar {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 0 14px; height: 38px; background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      font-size: 11px; color: var(--text-dim); gap: 8px;
-    }
-    .url-input {
-      flex: 1; background: var(--bg); border: 1px solid var(--border);
-      border-radius: 6px; padding: 4px 10px;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      font-size: 11px; color: var(--text-dim); outline: none;
-    }
-    .url-input:focus { border-color: var(--accent); color: var(--text); }
-    .preview-actions { display: flex; gap: 4px; }
-    .icon-btn {
-      background: none; border: none; color: var(--text-dim);
-      cursor: pointer; padding: 4px; border-radius: 4px;
-      transition: all .15s; display: flex; align-items: center;
-    }
-    .icon-btn:hover { color: var(--text); background: var(--bg); }
-    .preview iframe { flex: 1; width: 100%; border: none; background: white; }
 
     .loading-overlay {
-      position: absolute; inset: 38px 0 0 0;
+      position: absolute; inset: 0;
       background: rgba(11,13,17,.85);
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
@@ -236,72 +120,7 @@
 </head>
 <body>
   <div class="app">
-    <header>
-      <div class="header-left">
-        <a href="{{DASHBOARD_URL}}" class="back-btn" title="All sandboxes">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M19 12H5M12 19l-7-7 7-7"/>
-          </svg>
-        </a>
-        <div class="logo">
-          <div class="icon">S</div>
-          Studio
-        </div>
-        <div class="sandbox-name">{{SANDBOX_ID}}</div>
-      </div>
-      <div class="status-badge">
-        <div class="status-dot" id="statusDot"></div>
-        <span id="statusText">Connecting...</span>
-      </div>
-    </header>
-
-    <div class="panel">
-      <div class="file-bar" id="fileBar"></div>
-      <div class="messages" id="messages">
-        <div class="welcome" id="welcome">
-          <h2>Web App Sandbox</h2>
-          <p>Describe changes to the multi-page app, add pages, restyle &mdash; anything goes.</p>
-          <div class="suggestions">
-            <div class="suggestion" onclick="useSuggestion(this)">Change the colour scheme to dark mode with neon accents</div>
-            <div class="suggestion" onclick="useSuggestion(this)">Add a blog page with three sample posts</div>
-            <div class="suggestion" onclick="useSuggestion(this)">Redesign the home page as a SaaS landing page with pricing cards</div>
-          </div>
-        </div>
-      </div>
-      <div class="input-area">
-        <div class="input-row">
-          <textarea id="promptInput" rows="1" placeholder="Describe a change..."
-            onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
-          <button class="send-btn" id="sendBtn" onclick="sendPrompt()" disabled>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 2L11 13"></path>
-              <path d="M22 2L15 22L11 13L2 9L22 2Z"></path>
-            </svg>
-          </button>
-        </div>
-      </div>
-    </div>
-
     <div class="preview">
-      <div class="preview-bar">
-        <input class="url-input" id="urlInput" value="preview/" spellcheck="false"
-               onkeydown="if(event.key==='Enter'){navigatePreview(this.value)}">
-        <div class="preview-actions">
-          <button class="icon-btn" onclick="navigatePreview(document.getElementById('urlInput').value)" title="Go">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 12h14M12 5l7 7-7 7"></path>
-            </svg>
-          </button>
-          <button class="icon-btn" onclick="reloadPreview()" title="Reload">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 2v6h-6"></path>
-              <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
-              <path d="M3 22v-6h6"></path>
-              <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
-            </svg>
-          </button>
-        </div>
-      </div>
       <iframe id="previewFrame" src="about:blank"></iframe>
       <div class="loading-overlay" id="loadingOverlay">
         <div class="spinner"></div>
@@ -322,18 +141,13 @@
     const BASE = '/s/' + SANDBOX_ID + '/';
 
     let generating = false;
-    const history = [];
     let currentFiles = [];
 
     const els = Object.fromEntries(
-      ['messages','welcome','promptInput','sendBtn','previewFrame',
+      ['previewFrame',
        'loadingOverlay','loadingText','statusDot','statusText',
        'urlInput','fileBar','refinedBox','refinedText','refinedFrom','refinedToLabel','refinedStatus'].map(id => [id, document.getElementById(id)])
     );
-
-    els.promptInput.addEventListener('input', () => {
-      els.sendBtn.disabled = !els.promptInput.value.trim() || generating;
-    });
 
     function autoResize(el) {
       el.style.height = 'auto';
@@ -350,33 +164,14 @@
     }
 
     function addMessage(text, type, fileList) {
-      if (els.welcome) els.welcome.style.display = 'none';
-      const div = document.createElement('div');
-      div.className = 'message ' + type;
-      div.textContent = text;
-      if (fileList && fileList.length) {
-        const fl = document.createElement('div');
-        fl.className = 'file-list';
-        fl.textContent = fileList.join(', ');
-        div.appendChild(fl);
-      }
-      els.messages.appendChild(div);
-      els.messages.scrollTop = els.messages.scrollHeight;
     }
 
     function addRefinedFromMessage(rawPrompt, refinedPrompt) {
-      if (!rawPrompt || !refinedPrompt || rawPrompt === refinedPrompt) return;
-      if (els.welcome) els.welcome.style.display = 'none';
-      const div = document.createElement('div');
-      div.className = 'message refined-from';
-      div.textContent = 'From: ' + rawPrompt + ' \u2192 ' + refinedPrompt;
-      els.messages.appendChild(div);
-      els.messages.scrollTop = els.messages.scrollHeight;
+      return;
     }
 
     function setStatus(state, text) {
-      els.statusDot.className = 'status-dot ' + state;
-      els.statusText.textContent = text;
+      return;
     }
     function showLoading(text, refinedPrompt, rawPrompt, refinementSkipped, refinementFailed, refinementError) {
       els.loadingText.textContent = text;
@@ -425,28 +220,16 @@
 
     function renderFileTabs(files) {
       currentFiles = files;
-      els.fileBar.innerHTML = '';
-      files.forEach(f => {
-        const tab = document.createElement('div');
-        tab.className = 'file-tab';
-        tab.textContent = f;
-        tab.onclick = () => navigatePreview('preview/' + f);
-        els.fileBar.appendChild(tab);
-      });
     }
 
     function navigatePreview(path) {
       if (!path.startsWith('preview')) path = 'preview/' + path.replace(/^\/+/, '');
-      els.urlInput.value = path;
       const fullUrl = BASE + path + (path.includes('?') ? '&' : '?') + '_t=' + Date.now();
       els.previewFrame.src = fullUrl;
-      document.querySelectorAll('.file-tab').forEach(t => {
-        t.classList.toggle('active', path.includes(t.textContent));
-      });
     }
 
     function reloadPreview() {
-      const path = els.urlInput.value || 'preview/';
+      const path = 'preview/';
       const fullUrl = BASE + path + (path.includes('?') ? '&' : '?') + '_t=' + Date.now();
       els.previewFrame.src = fullUrl;
     }
@@ -510,7 +293,7 @@
     }
 
     async function sendPrompt() {
-      const prompt = els.promptInput.value.trim();
+      const prompt = '';
       if (!prompt || generating) return;
       generating = true;
       els.sendBtn.disabled = true;
@@ -545,7 +328,7 @@
         showLoading('No actionable request.', refinedPrompt || noRequestMessage, prompt, refinementSkipped, refinementFailed, refinementError);
         hideLoading();
         generating = false;
-        els.sendBtn.disabled = !els.promptInput.value.trim();
+        els.sendBtn.disabled = true;
         return;
       }
 
@@ -589,7 +372,7 @@
         }
       }
       generating = false;
-      els.sendBtn.disabled = !els.promptInput.value.trim();
+      els.sendBtn.disabled = true;
     }
 
     window.addEventListener('message', function(event) {
@@ -634,6 +417,8 @@
     els.previewFrame.addEventListener('load', sendPostHogToPreview);
 
     initSandbox();
+
+    // Session recording happens inside the preview iframe — see worker/src/index.ts.
   </script>
 </body>
 </html>

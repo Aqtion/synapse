@@ -74,6 +74,7 @@ export default defineSchema({
     timestampMs: v.number(),
     text: v.string(),
     isAiPrompt: v.boolean(),
+    fromMic: v.optional(v.boolean()),
   }).index("by_sandboxId", ["sandboxId"]),
 
   sandboxAnalyticsStats: defineTable({

@@ -99,6 +99,7 @@ export const insertTranscriptEntry = mutation({
     text: v.string(),
     sessionId: v.optional(v.string()),
     isAiPrompt: v.optional(v.boolean()),
+    fromMic: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const canAccess = await userCanAccessSandboxMutation(ctx, args.sandboxId);
@@ -109,6 +110,7 @@ export const insertTranscriptEntry = mutation({
       timestampMs: args.timestampMs,
       text: args.text,
       isAiPrompt: args.isAiPrompt ?? false,
+      fromMic: args.fromMic ?? false,
     });
   },
 });
@@ -259,6 +261,7 @@ export const seedAnalyticsForSandbox = internalMutation({
         timestampMs: Math.floor(startMs + i * segmentDurationMs),
         text: item.text,
         isAiPrompt: item.isAiPrompt,
+        fromMic: false,
       });
     });
 
@@ -421,6 +424,7 @@ export const seedAnalytics = mutation({
         timestampMs: Math.floor(startMs + i * segmentDurationMs),
         text: item.text,
         isAiPrompt: item.isAiPrompt,
+        fromMic: false,
       });
     }
 

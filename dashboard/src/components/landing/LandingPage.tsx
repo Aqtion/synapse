@@ -30,7 +30,7 @@ export function LandingPage() {
   const [signInOpen, setSignInOpen] = useState(false);
 
   return (
-    <div className="min-h-screen overflow-hidden relative flex flex-col items-center justify-center px-4 py-16 bg-gradient-to-b from-background to-muted/30">
+    <div className="min-h-screen overflow-hidden relative flex flex-col items-center justify-center px-4 py-16 bg-linear-to-b from-background to-muted/30">
       {/* Decorative background logos — very low opacity, partially off-screen, no scroll */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <DecorativeLogo
