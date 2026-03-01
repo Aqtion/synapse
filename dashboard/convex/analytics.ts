@@ -2,6 +2,10 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
+/** Default PostHog session replay embed URL used when seeding analytics. */
+const DEFAULT_POSTHOG_REPLAY_EMBED_URL =
+  "https://us.posthog.com/embedded/IUAkhGVtGX24NOuA8nU7TMoE8621DQ";
+
 async function userCanAccessSandbox(ctx: QueryCtx, sandboxId: string): Promise<boolean> {
   const row = await ctx.db
     .query("sandboxes")
@@ -161,7 +165,7 @@ export const seedAnalyticsForSandbox = internalMutation({
     supermemorySummary: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const durationSec = args.sessionDurationSeconds ?? 120;
+    const durationSec = args.sessionDurationSeconds ?? 540; // 9 minutes
     const startedAt = Date.now() - durationSec * 1000;
     const endedAt = Date.now();
 
@@ -169,7 +173,7 @@ export const seedAnalyticsForSandbox = internalMutation({
       sandboxId: args.sandboxId,
       startedAt,
       endedAt,
-      sessionReplayVideoUrl: args.sessionReplayVideoUrl,
+      sessionReplayVideoUrl: args.sessionReplayVideoUrl ?? DEFAULT_POSTHOG_REPLAY_EMBED_URL,
       supermemorySummary:
         args.supermemorySummary ??
         "User explored the sandbox, made several UI changes, and used AI to refine the layout. Key moments included adding a sidebar and adjusting colors.",
@@ -185,29 +189,32 @@ export const seedAnalyticsForSandbox = internalMutation({
       "highEnergyPleasant",
       "highEnergyUnpleasant",
     ] as const;
-    const segmentLength = Math.max(5, Math.floor(n / 16));
     const sessionIdStr = sessionId as unknown as string;
+
+    const deltaRange = 0.12;
+    const clamp = (x: number) => Math.max(0, Math.min(1, x));
+    const values: Record<(typeof emotionKeys)[number], number> = {
+      lowEnergyUnpleasant: Math.random(),
+      lowEnergyPleasant: Math.random(),
+      highEnergyPleasant: Math.random(),
+      highEnergyUnpleasant: Math.random(),
+    };
     for (let i = 0; i <= n; i++) {
       const t = startMs + i * stepMs;
-      const segmentIndex = Math.floor(i / segmentLength) % emotionKeys.length;
-      const dominant = emotionKeys[segmentIndex]!;
-      const useHalf = (i % segmentLength) >= segmentLength - 2;
-      const value = useHalf ? 0.5 : 0.85 + Math.random() * 0.15;
-      const sample: Record<string, number> = {
-        lowEnergyUnpleasant: 0,
-        lowEnergyPleasant: 0,
-        highEnergyPleasant: 0,
-        highEnergyUnpleasant: 0,
-      };
-      sample[dominant] = value;
+      if (i > 0) {
+        for (const k of emotionKeys) {
+          const delta = (Math.random() * 2 - 1) * deltaRange;
+          values[k] = clamp(values[k] + delta);
+        }
+      }
       await ctx.db.insert("sandboxEmotionSamples", {
         sandboxId: args.sandboxId,
         sessionId: sessionIdStr,
         timestampMs: t,
-        lowEnergyUnpleasant: sample.lowEnergyUnpleasant,
-        lowEnergyPleasant: sample.lowEnergyPleasant,
-        highEnergyPleasant: sample.highEnergyPleasant,
-        highEnergyUnpleasant: sample.highEnergyUnpleasant,
+        lowEnergyUnpleasant: values.lowEnergyUnpleasant,
+        lowEnergyPleasant: values.lowEnergyPleasant,
+        highEnergyPleasant: values.highEnergyPleasant,
+        highEnergyUnpleasant: values.highEnergyUnpleasant,
       });
     }
 
@@ -326,7 +333,7 @@ export const seedAnalytics = mutation({
   handler: async (ctx, args) => {
     const canAccess = await userCanAccessSandboxMutation(ctx, args.sandboxId);
     if (!canAccess) throw new Error("You do not have access to this sandbox");
-    const durationSec = args.sessionDurationSeconds ?? 120;
+    const durationSec = args.sessionDurationSeconds ?? 540; // 9 minutes
     const startedAt = Date.now() - durationSec * 1000;
     const endedAt = Date.now();
 
@@ -334,6 +341,7 @@ export const seedAnalytics = mutation({
       sandboxId: args.sandboxId,
       startedAt,
       endedAt,
+      sessionReplayVideoUrl: DEFAULT_POSTHOG_REPLAY_EMBED_URL,
       supermemorySummary:
         "User explored the sandbox, made several UI changes, and used AI to refine the layout. Key moments included adding a sidebar and adjusting colors.",
     });
@@ -348,13 +356,13 @@ export const seedAnalytics = mutation({
       "highEnergyPleasant",
       "highEnergyUnpleasant",
     ] as const;
-    const segmentLength = Math.max(5, Math.floor(n / 16));
+    let dominant = emotionKeys[Math.floor(Math.random() * emotionKeys.length)]!;
     for (let i = 0; i <= n; i++) {
+      const switchProb = 0.015 + Math.random() * 0.08;
+      if (Math.random() < switchProb) dominant = emotionKeys[Math.floor(Math.random() * emotionKeys.length)]!;
       const t = startMs + i * stepMs;
-      const segmentIndex = Math.floor(i / segmentLength) % emotionKeys.length;
-      const dominant = emotionKeys[segmentIndex]!;
-      const useHalf = (i % segmentLength) >= segmentLength - 2;
-      const value = useHalf ? 0.5 : 0.85 + Math.random() * 0.15;
+      const value = 0.72 + Math.random() * 0.28;
+      const half = value / 2;
       const sample: Record<string, number> = {
         lowEnergyUnpleasant: 0,
         lowEnergyPleasant: 0,
@@ -362,6 +370,13 @@ export const seedAnalytics = mutation({
         highEnergyUnpleasant: 0,
       };
       sample[dominant] = value;
+      const floor = 0.08;
+      for (const k of emotionKeys) {
+        if (k !== dominant) {
+          const range = Math.max(0.01, half - floor);
+          sample[k] = Math.max(floor, Math.min(half, floor + Math.random() * range));
+        }
+      }
       await ctx.db.insert("sandboxEmotionSamples", {
         sandboxId: args.sandboxId,
         sessionId: sessionId as unknown as string,
