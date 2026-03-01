@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const TTS_VOICE_ID = "JBFqnCBsd6RMkjVDRZzb";
+const ELEVENLABS_TTS_URL = "https://api.elevenlabs.io/v1/text-to-speech";
+const DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel
 
 export async function POST(request: NextRequest) {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       { error: "ELEVENLABS_API_KEY is not configured" },
-      { status: 500 }
+      { status: 503 }
     );
   }
 
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const text = typeof body.text === "string" ? body.text.trim() : "";
+  const text = typeof body?.text === "string" ? body.text.trim() : "";
   if (!text) {
     return NextResponse.json(
       { error: "Missing or empty text" },
@@ -29,9 +30,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const res = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${TTS_VOICE_ID}`,
-    {
+  const voiceId = process.env.ELEVENLABS_VOICE_ID ?? DEFAULT_VOICE_ID;
+  const url = `${ELEVENLABS_TTS_URL}/${voiceId}?optimize_streaming_latency=2`;
+
+  try {
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         "xi-api-key": apiKey,
@@ -39,26 +42,31 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         text,
-        model_id: "eleven_turbo_v2",
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        model_id: "eleven_turbo_v2_5",
       }),
-    }
-  );
+    });
 
-  if (!res.ok) {
-    const err = await res.text();
-    console.error("[TTS] ElevenLabs error:", res.status, err);
+    if (!res.ok) {
+      const errText = await res.text();
+      return NextResponse.json(
+        { error: errText || `ElevenLabs TTS failed (${res.status})` },
+        { status: res.status >= 500 ? 502 : res.status }
+      );
+    }
+
+    const contentType = res.headers.get("content-type") || "audio/mpeg";
+    return new NextResponse(res.body, {
+      status: 200,
+      headers: {
+        "Content-Type": contentType,
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "TTS request failed";
     return NextResponse.json(
-      { error: err || "TTS failed" },
-      { status: res.status }
+      { error: message },
+      { status: 502 }
     );
   }
-
-  const blob = await res.blob();
-  return new NextResponse(blob, {
-    headers: {
-      "Content-Type": "audio/mpeg",
-      "Cache-Control": "no-cache",
-    },
-  });
 }
