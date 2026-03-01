@@ -109,7 +109,7 @@ export function EmotionPieCard({ emotionSamples, emotionScores }: EmotionPieCard
                   0
                 );
                 const body = (
-                  <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-xl z-[100]">
+                  <div className="rounded-lg border bg-background px-3 py-2 text-xs shadow-xl z-[100] transition-[opacity,transform] duration-200 ease-out">
                     <div className="font-medium text-foreground">{categoryLabel}</div>
                     {withScores.length > 0 ? (
                       <div className="mt-1.5 text-muted-foreground">
@@ -151,7 +151,7 @@ export function EmotionPieCard({ emotionSamples, emotionScores }: EmotionPieCard
                 if (typeof document !== "undefined") {
                   return createPortal(
                     <div
-                      className="pointer-events-none"
+                      className="pointer-events-none transition-[left,top,opacity] duration-200 ease-out"
                       style={{
                         position: "fixed",
                         left: Math.min(left, window.innerWidth - 240),

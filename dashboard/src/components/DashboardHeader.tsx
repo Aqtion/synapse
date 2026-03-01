@@ -46,7 +46,7 @@ export function DashboardHeader() {
   const projectHref = project_id ? `/${user_id}/${project_id}` : projectsHref;
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+    <header className="flex h-12 sticky top-0 z-40 bg-background/50 backdrop-blur-md supports-backdrop-filter:bg-background/15 shrink-0 items-center gap-2 border-b border-border/40 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
       <div className="flex items-center gap-2 px-4">
         <SidebarTrigger className="-ml-1" />
         <Separator

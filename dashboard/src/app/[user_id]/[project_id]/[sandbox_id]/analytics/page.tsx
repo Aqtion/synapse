@@ -190,6 +190,7 @@ export default function SandboxAnalyticsPage() {
                 onSeekBack10={onSeekBack10}
                 onSeekForward10={onSeekForward10}
                 onPlaybackRateCycle={onPlaybackRateCycle}
+                emotionScores={emotionScores ?? undefined}
               />
             </div>
             <div className="min-h-0 h-full rounded-lg border bg-muted/30 overflow-visible flex flex-col">
@@ -204,15 +205,6 @@ export default function SandboxAnalyticsPage() {
 
           {/* Below the fold: cards - overflow-visible so tooltips can float above grid. Click data spans 3 cols. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 overflow-visible [&>*]:overflow-visible">
-            <ClickDataCard
-              stats={clickDataStats ?? undefined}
-              missedClicks={missedClicks ?? undefined}
-              sessionStartMs={sessionStartMs}
-            />
-            <EmotionPieCard
-              emotionSamples={emotionSamplesLegacy}
-              emotionScores={emotionScores ?? undefined}
-            />
             <EmotionQuadrantPathCard
               emotionSamples={emotionSamples ?? []}
               sessionStartMs={sessionStartMs}
@@ -222,6 +214,15 @@ export default function SandboxAnalyticsPage() {
             <SupermemorySummaryCard summary={session?.supermemorySummary} />
             <AiPromptsAndLinesCard stats={stats} />
             <PrStatusCard sandbox={sandbox} />
+            <ClickDataCard
+              stats={clickDataStats ?? undefined}
+              missedClicks={missedClicks ?? undefined}
+              sessionStartMs={sessionStartMs}
+            />
+            <EmotionPieCard
+              emotionSamples={emotionSamplesLegacy}
+              emotionScores={emotionScores ?? undefined}
+            />
           </div>
         </>
       )}

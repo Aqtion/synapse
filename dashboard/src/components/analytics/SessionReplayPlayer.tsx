@@ -49,7 +49,7 @@ export function ReplayControlsOverlay({
   return (
     <>
       <div
-        className="absolute inset-0 flex items-end justify-center pb-4 transition-opacity duration-200 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto z-20"
+        className="absolute inset-0 flex items-end justify-center pb-4 transition-opacity duration-200 opacity-0 group-hover:opacity-100 pointer-events-none z-20"
       >
         <div className="flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 pointer-events-auto">
           <button
@@ -92,7 +92,7 @@ export function ReplayControlsOverlay({
         </div>
       </div>
       <div
-        className="absolute bottom-4 right-4 transition-opacity duration-200 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto"
+        className="absolute bottom-4 right-4 transition-opacity duration-200 opacity-0 group-hover:opacity-100 pointer-events-none"
       >
         <button
           type="button"
@@ -100,7 +100,7 @@ export function ReplayControlsOverlay({
             e.stopPropagation();
             onPlaybackRateCycle();
           }}
-          className="rounded-md bg-black/70 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-black/80 transition-colors"
+          className="rounded-md bg-black/70 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-black/80 transition-colors pointer-events-auto"
           aria-label="Playback speed"
         >
           {playbackRate}x

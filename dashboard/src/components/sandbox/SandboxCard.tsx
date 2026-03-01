@@ -17,7 +17,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -267,30 +267,14 @@ export function SandboxCard({
               onOpen(sandbox);
             }
           }}
-          className="group relative cursor-pointer overflow-hidden transition-all bg-card border-2 hover:border-primary hover:shadow-lg flex flex-col p-0"
+          className="group relative cursor-pointer overflow-hidden transition-all bg-card border rounded-lg hover:border-primary/50 hover:shadow transition-colors flex flex-col min-h-[88px] p-4"
         >
-          {/* Image / preview area at top */}
-          <div
-            className="w-full aspect-video bg-muted shrink-0 bg-linear-to-br from-muted to-muted/70"
-            aria-hidden
-          />
-
-          <CardContent className="flex flex-row justify-between gap-2 pt-2 pb-4 px-4 min-w-0">
-            {/* Title top-left under image */}
-            <div className="flex flex-col items-start justify-between gap-2 min-w-0">
-              <span className="font-semibold text-lg text-foreground truncate flex-1 min-w-0">
-                {sandbox.name}
-              </span>
-              {/* Last opened: clock + "3m ago" */}
-
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Clock className="size-3.5 shrink-0" />
-                <span className="translate-y-0.5">{timeAgo(sandbox.lastOpenedAt)}</span>
-              </div>
-            </div>
-
-            {/* Actions: Analytics (if in project), PR link or Create PR, then three dots */}
-            <div className="flex items-center justify-end gap-1 mt-auto pt-1">
+          {/* Top row: title (left), actions (right) */}
+          <div className="flex items-start justify-between gap-3 min-w-0">
+            <h2 className="flex-1 min-w-0 font-semibold truncate pr-9">
+              {sandbox.name}
+            </h2>
+            <div className="flex items-center justify-end gap-1 shrink-0 absolute top-3 right-3">
               {analyticsHref && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -386,7 +370,14 @@ export function SandboxCard({
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-          </CardContent>
+          </div>
+          {/* Bottom row: last opened */}
+          <div className="flex items-center justify-between gap-3 min-w-0 mt-2">
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Clock className="size-3.5 shrink-0" />
+              <span>{timeAgo(sandbox.lastOpenedAt)}</span>
+            </div>
+          </div>
         </Card>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48" onClick={(e) => e.stopPropagation()}>

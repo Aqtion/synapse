@@ -7,12 +7,24 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
   ReferenceLine,
 } from "recharts";
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
-import { EMOTION_CATEGORY_COLORS, EMOTION_CATEGORY_LABELS } from "@/lib/emotion-categories";
+import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/chart";
+import {
+  EMOTION_CATEGORY_COLORS,
+  EMOTION_CATEGORY_LABELS,
+  getEmotionsInQuadrant,
+  type EmotionCategory,
+  type Quadrant,
+} from "@/lib/emotion-categories";
 import { ReplayControlsOverlay } from "@/components/analytics/SessionReplayPlayer";
+
+const LEGACY_KEY_TO_QUADRANT: Record<EmotionCategory, Quadrant> = {
+  lowEnergyUnpleasant: "unpleasantLowEnergy",
+  lowEnergyPleasant: "pleasantLowEnergy",
+  highEnergyPleasant: "pleasantHighEnergy",
+  highEnergyUnpleasant: "unpleasantHighEnergy",
+};
 
 export type EmotionSample = {
   timestampMs: number;
@@ -42,19 +54,87 @@ type EmotionTimelineChartProps = {
   onSeekBack10?: () => void;
   onSeekForward10?: () => void;
   onPlaybackRateCycle?: () => void;
+  /** Per-emotion score sums for the session (for tooltip sub-emotion). Optional. */
+  emotionScores?: Record<string, number> | null;
 };
 
 type ChartCoreProps = {
   data: Array<EmotionSample & { timeSeconds: number }>;
   durationMs: number;
   playheadTimeSeconds: number;
+  emotionScores?: Record<string, number> | null;
 };
+
+function getTopEmotionInQuadrant(quadrant: Quadrant, emotionScores: Record<string, number>): string | null {
+  const emotions = getEmotionsInQuadrant(quadrant);
+  if (emotions.length === 0) return null;
+  const withScores = emotions
+    .map((name) => ({ name, score: emotionScores[name] ?? 0 }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+  return withScores[0]?.name ?? null;
+}
 
 const EmotionChartCore = memo(function EmotionChartCore({
   data,
   durationMs,
   playheadTimeSeconds,
+  emotionScores,
 }: ChartCoreProps) {
+  const tooltipContent = useCallback(
+    (props: { active?: boolean; payload?: Array<{ dataKey?: string; value?: number; color?: string; payload?: { timeSeconds?: number } }>; label?: number }) => {
+      const { active, payload, label } = props;
+      if (!active || !payload?.length) return null;
+      const first = payload[0];
+      const timeSeconds = typeof label === "number" ? label : (first && "payload" in first ? first.payload?.timeSeconds : undefined);
+      const timeStr =
+        timeSeconds != null
+          ? `${Math.floor(timeSeconds / 60)}:${String(Math.floor(timeSeconds % 60)).padStart(2, "0")}`
+          : "";
+      const rows = payload
+        .filter((p) => p.dataKey && chartConfig[p.dataKey as EmotionCategory])
+        .map((p) => ({
+          key: p.dataKey as EmotionCategory,
+          value: typeof p.value === "number" ? p.value : 0,
+          label: chartConfig[p.dataKey as EmotionCategory]?.label ?? p.dataKey,
+          color: p.color,
+        }))
+        .sort((a, b) => b.value - a.value);
+      return (
+        <div className="z-30 min-w-[10rem] rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
+          {timeStr && (
+            <div className="mb-1.5 font-medium text-foreground">{timeStr}</div>
+          )}
+          <div className="grid gap-1">
+            {rows.map((row) => {
+              const pct = `${(row.value * 100).toFixed(0)}%`;
+              const quadrant = LEGACY_KEY_TO_QUADRANT[row.key];
+              const topSub = emotionScores && quadrant ? getTopEmotionInQuadrant(quadrant, emotionScores) : null;
+              return (
+                <div key={row.key} className="flex flex-col gap-0.5">
+                  <div className="flex w-full items-center justify-between gap-4">
+                    {row.color != null && (
+                      <div
+                        className="h-2.5 w-2.5 shrink-0 rounded-[2px] border border-border"
+                        style={{ backgroundColor: row.color, borderColor: row.color }}
+                      />
+                    )}
+                    <span className="flex-1 text-muted-foreground">{row.label}</span>
+                    <span className="font-mono font-medium tabular-nums text-foreground">{pct}</span>
+                  </div>
+                  {topSub != null && (
+                    <div className="pl-4 text-muted-foreground/90">{topSub}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    },
+    [emotionScores],
+  );
+
   return (
     <ChartContainer config={chartConfig} className="h-full w-full [&_.recharts-reference-line]:pointer-events-none">
       <AreaChart
@@ -74,38 +154,7 @@ const EmotionChartCore = memo(function EmotionChartCore({
           className="text-xs"
         />
         <YAxis hide domain={[0, 1]} />
-        <ChartTooltip
-          cursor={false}
-          content={
-            <ChartTooltipContent
-              formatter={(value, name, item) => {
-                const key = (item?.dataKey ?? name) as keyof typeof chartConfig;
-                const label = chartConfig[key]?.label ?? name;
-                const pct =
-                  typeof value === "number"
-                    ? `${(value * 100).toFixed(0)}%`
-                    : String(value ?? "");
-                const color = item?.color ?? item?.payload?.fill;
-                return (
-                  <>
-                    {color != null && (
-                      <div
-                        className="h-2.5 w-2.5 shrink-0 rounded-[2px] border border-border bg-background"
-                        style={{ backgroundColor: color, borderColor: color }}
-                      />
-                    )}
-                    <div className="flex flex-1 justify-between leading-none items-center">
-                      <span className="text-muted-foreground">{label}</span>
-                      <span className="text-foreground font-mono font-medium tabular-nums">
-                        {pct}
-                      </span>
-                    </div>
-                  </>
-                );
-              }}
-            />
-          }
-        />
+        <ChartTooltip cursor={false} content={tooltipContent as React.ComponentProps<typeof ChartTooltip>["content"]} />
         <ReferenceLine
           x={playheadTimeSeconds}
           stroke="var(--foreground)"
@@ -131,11 +180,9 @@ const EmotionChartCore = memo(function EmotionChartCore({
             <stop offset="95%" stopColor="var(--color-highEnergyUnpleasant)" stopOpacity={0.1} />
           </linearGradient>
         </defs>
-        {/* Stack order: bottom → top = PHE, PLE, UPLE, UPHE */}
         <Area
           type="monotone"
           dataKey="highEnergyPleasant"
-          stackId="emotion"
           fill="url(#fillHighEnergyPleasant)"
           fillOpacity={0.8}
           stroke="var(--color-highEnergyPleasant)"
@@ -144,7 +191,6 @@ const EmotionChartCore = memo(function EmotionChartCore({
         <Area
           type="monotone"
           dataKey="lowEnergyPleasant"
-          stackId="emotion"
           fill="url(#fillLowEnergyPleasant)"
           fillOpacity={0.8}
           stroke="var(--color-lowEnergyPleasant)"
@@ -153,7 +199,6 @@ const EmotionChartCore = memo(function EmotionChartCore({
         <Area
           type="monotone"
           dataKey="lowEnergyUnpleasant"
-          stackId="emotion"
           fill="url(#fillLowEnergyUnpleasant)"
           fillOpacity={0.8}
           stroke="var(--color-lowEnergyUnpleasant)"
@@ -162,7 +207,6 @@ const EmotionChartCore = memo(function EmotionChartCore({
         <Area
           type="monotone"
           dataKey="highEnergyUnpleasant"
-          stackId="emotion"
           fill="url(#fillHighEnergyUnpleasant)"
           fillOpacity={0.8}
           stroke="var(--color-highEnergyUnpleasant)"
@@ -187,6 +231,7 @@ function EmotionTimelineChartInner({
   onSeekBack10,
   onSeekForward10,
   onPlaybackRateCycle,
+  emotionScores,
 }: EmotionTimelineChartProps) {
   const durationMs = Math.max(0, sessionEndMs - sessionStartMs);
 
@@ -302,6 +347,7 @@ function EmotionTimelineChartInner({
           data={data}
           durationMs={durationMs}
           playheadTimeSeconds={playheadTimeSeconds}
+          emotionScores={emotionScores ?? undefined}
         />
         {hoverPercent != null && (
           <div

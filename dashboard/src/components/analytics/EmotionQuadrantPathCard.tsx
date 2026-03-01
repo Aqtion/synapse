@@ -173,9 +173,14 @@ function EmotionQuadrantPathCardInner({
   ];
 
   const showTooltip = hoverIndex !== null && tooltipSample && tooltipPos;
+  const tooltipTimestampMs = tooltipSample ? tooltipSample.timestampMs - sessionStartMs : 0;
+  const tooltipTimeStr =
+    tooltipTimestampMs >= 0
+      ? `${Math.floor(tooltipTimestampMs / 60000)}:${String(Math.floor((tooltipTimestampMs % 60000) / 1000)).padStart(2, "0")}`
+      : "0:00";
   const tooltipEl = showTooltip ? (
     <div
-      className="pointer-events-none fixed z-[100] rounded-lg border bg-background px-3 py-2 text-xs shadow-xl"
+      className="pointer-events-none fixed z-[100] rounded-lg border bg-background px-3 py-2 text-xs shadow-xl transition-[left,top,opacity] duration-200 ease-out"
       style={{
         left: tooltipPos!.x,
         top: tooltipPos!.y,
@@ -183,7 +188,8 @@ function EmotionQuadrantPathCardInner({
         maxWidth: 220,
       }}
     >
-      <div className="font-medium text-foreground">Top 3 at this time</div>
+      <div className="font-medium text-muted-foreground text-[10px] uppercase tracking-wide">{tooltipTimeStr}</div>
+      <div className="mt-1 font-medium text-foreground">Top 3 at this time</div>
       <ul className="mt-1 space-y-1">
         {top3Quadrants(tooltipSample!).map(({ q, value }) => (
           <li key={q} className="flex items-center gap-2">
@@ -250,20 +256,6 @@ function EmotionQuadrantPathCardInner({
               className="fill-muted-foreground text-[10px]"
             >
               Pleasant ← → Unpleasant
-            </text>
-            <text
-              x={PAD + AXIS_LABEL + 20}
-              y={PAD + 16}
-              className="fill-muted-foreground/70 text-[9px]"
-            >
-              Pleasant
-            </text>
-            <text
-              x={w - PAD - 24}
-              y={PAD + 16}
-              className="fill-muted-foreground/70 text-[9px]"
-            >
-              Unpleasant
             </text>
             {/* Crosshair at data center */}
             <line
