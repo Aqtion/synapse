@@ -8,6 +8,22 @@ import type { Quadrant } from "./emotionCategories";
 const DEFAULT_POSTHOG_REPLAY_EMBED_URL =
   "https://us.posthog.com/embedded/IUAkhGVtGX24NOuA8nU7TMoE8621DQ";
 
+/** Shared transcript entries for seeding. Theme: user perusing a friend's dev portfolio, commenting (non-AI) and asking for changes (AI), with big pauses between chunks. */
+const TRANSCRIPT_TEXTS: { text: string; isAiPrompt: boolean }[] = [
+  { text: "Oh, so this is Jake's portfolio. Let me scroll and see what he's got.", isAiPrompt: false },
+  { text: "The hero section is kind of busy. I don't love that font.", isAiPrompt: false },
+  { text: "Can you simplify the hero — simpler headline, less going on?", isAiPrompt: true },
+  { text: "Projects are way down here. Took me a second to find them.", isAiPrompt: false },
+  { text: "Add a nav link that jumps straight to the projects section.", isAiPrompt: true },
+  { text: "The project cards all look the same. Hard to tell what's what.", isAiPrompt: false },
+  { text: "Give each project card a different accent or icon so they're easier to scan.", isAiPrompt: true },
+  { text: "Hmm. The contact section feels cramped.", isAiPrompt: false },
+  { text: "Add more spacing in the contact section and make the inputs bigger.", isAiPrompt: true },
+  { text: "Okay, that's better. Still not crazy about the green.", isAiPrompt: false },
+  { text: "Switch the accent color from green to a warm blue or teal.", isAiPrompt: true },
+  { text: "Alright, I'll send him some notes. Good enough for a first pass.", isAiPrompt: false },
+];
+
 /** All Hume emotion names (must match EMOTION_TO_QUADRANT so categorization and pie tooltips work). */
 const ALL_HUME_EMOTION_NAMES = Object.keys(EMOTION_TO_QUADRANT) as string[];
 
@@ -516,50 +532,8 @@ export const seedAnalyticsForSandbox = internalMutation({
     const startMs = startedAt;
     const sessionIdStr = sessionId as unknown as string;
 
-    const transcriptTexts: { text: string; isAiPrompt: boolean }[] = [
-      { text: "Let me try opening this panel.", isAiPrompt: false },
-      { text: "Make the header blue and add a logo.", isAiPrompt: true },
-      { text: "That looks good. Can we try a different font?", isAiPrompt: false },
-      { text: "Use Inter for the body and keep the heading bold.", isAiPrompt: true },
-      { text: "I want to add a sidebar on the left.", isAiPrompt: true },
-      { text: "Perfect. Now show the user name at the top right.", isAiPrompt: true },
-      { text: "The layout is a bit cramped on mobile.", isAiPrompt: false },
-      { text: "Make the sidebar collapse on small screens.", isAiPrompt: true },
-      { text: "I think we need more padding around the cards.", isAiPrompt: false },
-      { text: "Add 16px padding to the card container and round the corners.", isAiPrompt: true },
-      { text: "What about dark mode? Does this support it?", isAiPrompt: false },
-      { text: "Add a dark theme using CSS variables for background and text.", isAiPrompt: true },
-      { text: "The button feels a bit small on touch devices.", isAiPrompt: false },
-      { text: "Increase minimum touch target size to 44px for primary buttons.", isAiPrompt: true },
-      { text: "Can we add a loading state when submitting?", isAiPrompt: false },
-      { text: "Show a spinner on the submit button and disable it while loading.", isAiPrompt: true },
-      { text: "The form validation message is easy to miss.", isAiPrompt: false },
-      { text: "Display validation errors in red below each field with an icon.", isAiPrompt: true },
-      { text: "I'd like to see a confirmation before deleting.", isAiPrompt: false },
-      { text: "Add a confirmation dialog when the user clicks delete.", isAiPrompt: true },
-      { text: "The table could use sortable column headers.", isAiPrompt: false },
-      { text: "Make the table headers clickable to sort ascending and descending.", isAiPrompt: true },
-      { text: "We need to handle empty state when there's no data.", isAiPrompt: false },
-      { text: "Show an empty state illustration and message when the list is empty.", isAiPrompt: true },
-      { text: "The search could highlight matching text in results.", isAiPrompt: false },
-      { text: "Highlight the search query in the result snippets.", isAiPrompt: true },
-      { text: "Can we add keyboard shortcuts for power users?", isAiPrompt: false },
-      { text: "Add Ctrl+K for search and Escape to close modals.", isAiPrompt: true },
-      { text: "The tooltip is cut off on the right edge of the screen.", isAiPrompt: false },
-      { text: "Flip tooltip placement when near the viewport edge.", isAiPrompt: true },
-      { text: "I want to export this data as CSV.", isAiPrompt: false },
-      { text: "Add an Export button that downloads the current view as CSV.", isAiPrompt: true },
-      { text: "The chart legend is overlapping the graph on small screens.", isAiPrompt: false },
-      { text: "Move the legend below the chart on viewports under 640px.", isAiPrompt: true },
-      { text: "We should show a success toast after saving.", isAiPrompt: false },
-      { text: "Display a toast notification when the form is saved successfully.", isAiPrompt: true },
-      { text: "The nav could indicate the current page more clearly.", isAiPrompt: false },
-      { text: "Add an active state and subtle background to the current nav item.", isAiPrompt: true },
-      { text: "That should be enough to test the auto-scroll and highlighting.", isAiPrompt: false },
-    ];
-
-    const segmentDurationMs = (endedAt - startMs) / transcriptTexts.length;
-    transcriptTexts.forEach((item, i) => {
+    const segmentDurationMs = (endedAt - startMs) / TRANSCRIPT_TEXTS.length;
+    TRANSCRIPT_TEXTS.forEach((item, i) => {
       ctx.db.insert("sandboxTranscriptEntries", {
         sandboxId: args.sandboxId,
         sessionId: sessionIdStr,
@@ -575,7 +549,7 @@ export const seedAnalyticsForSandbox = internalMutation({
       .withIndex("by_sandboxId", (q) => q.eq("sandboxId", args.sandboxId))
       .first();
 
-    const aiPromptCount = transcriptTexts.filter((t) => t.isAiPrompt).length;
+    const aiPromptCount = TRANSCRIPT_TEXTS.filter((t) => t.isAiPrompt).length;
     const lastUpdated = Date.now();
     if (existingStats) {
       await ctx.db.patch(existingStats._id, {
@@ -592,7 +566,7 @@ export const seedAnalyticsForSandbox = internalMutation({
       });
     }
 
-    return { sessionId, transcriptCount: transcriptTexts.length };
+    return { sessionId, transcriptCount: TRANSCRIPT_TEXTS.length };
   },
 });
 
@@ -662,19 +636,243 @@ function randomQuadrantWeights(
   return weights;
 }
 
-/** Public mutation to seed analytics for a sandbox (for "Load demo data" in UI). */
+/** Modular: seed only emotion (Hume) telemetry for a session window. */
+async function seedEmotionSamplesForSession(
+  ctx: MutationCtx,
+  sandboxId: string,
+  sessionIdStr: string,
+  startMs: number,
+  endMs: number
+): Promise<void> {
+  const durationMs = endMs - startMs;
+  const emotionStepMs = 1000;
+  const numEmotionSamples = Math.max(1, Math.floor(durationMs / emotionStepMs) + 1);
+  for (let i = 0; i < numEmotionSamples; i++) {
+    const t = Math.min(i * emotionStepMs, durationMs);
+    const timestampMs = startMs + t;
+    const phaseProgress = numEmotionSamples <= 1 ? 0 : i / (numEmotionSamples - 1);
+    const weights = randomQuadrantWeights(phaseProgress);
+    const payload = buildHumePayload(weights);
+    await ctx.db.insert("telemetrySamples", {
+      sandboxId,
+      sessionId: sessionIdStr,
+      timestampMs,
+      source: "hume",
+      payload,
+    });
+  }
+}
+
+/** Modular: seed only mouse (click) telemetry for a session window. */
+async function seedMouseSamplesForSession(
+  ctx: MutationCtx,
+  sandboxId: string,
+  sessionIdStr: string,
+  startMs: number,
+  endMs: number
+): Promise<void> {
+  const durationMs = endMs - startMs;
+  const mouseTags = ["BUTTON", "DIV", "A", "SPAN", "INPUT", "BUTTON", "DIV"];
+  const mouseIds = [
+    "checkout-btn",
+    "login-btn",
+    "submit-btn",
+    "nav",
+    "main",
+    "search-input",
+    "cancel-btn",
+    "save-btn",
+    "add-to-cart",
+    "user-menu",
+    "sidebar-toggle",
+  ];
+  const mouseStepMs = 2000;
+  for (let t = 0; t <= durationMs; t += mouseStepMs) {
+    const timestampMs = startMs + t;
+    const tagIdx = Math.floor(Math.random() * mouseTags.length);
+    const idIdx = Math.floor(Math.random() * mouseIds.length);
+    const underTag = mouseTags[tagIdx]!;
+    const underId = mouseIds[idIdx]!;
+    const mismatch = Math.random() < 0.38;
+    const interactiveTag = mismatch
+      ? (underTag === "BUTTON" ? "DIV" : "BUTTON")
+      : underTag;
+    const interactiveId = mismatch
+      ? mouseIds[(idIdx + 1) % mouseIds.length]!
+      : underId;
+    const x = 100 + Math.random() * 600;
+    const y = 80 + Math.random() * 400;
+    const payload = buildMousePayload(x, y, underTag, underId, interactiveTag, interactiveId);
+    await ctx.db.insert("telemetrySamples", {
+      sandboxId,
+      sessionId: sessionIdStr,
+      timestampMs,
+      source: "mouse",
+      payload,
+    });
+  }
+}
+
+/** Modular: seed only transcript entries for a session. */
+async function seedTranscriptForSession(
+  ctx: MutationCtx,
+  sandboxId: string,
+  sessionIdStr: string,
+  startMs: number,
+  endMs: number
+): Promise<number> {
+  const segmentMs =
+    TRANSCRIPT_TEXTS.length <= 1 ? 0 : (endMs - startMs) / (TRANSCRIPT_TEXTS.length - 1);
+  for (let i = 0; i < TRANSCRIPT_TEXTS.length; i++) {
+    const item = TRANSCRIPT_TEXTS[i]!;
+    const timestampMs =
+      TRANSCRIPT_TEXTS.length <= 1
+        ? startMs
+        : Math.round(startMs + i * segmentMs);
+    await ctx.db.insert("sandboxTranscriptEntries", {
+      sandboxId,
+      sessionId: sessionIdStr,
+      timestampMs,
+      text: item.text,
+      isAiPrompt: item.isAiPrompt,
+      fromMic: false,
+    });
+  }
+  return TRANSCRIPT_TEXTS.length;
+}
+
+/** Modular: seed or update sandbox stats (e.g. after transcript seed). */
+async function seedStatsForSandbox(
+  ctx: MutationCtx,
+  sandboxId: string,
+  aiPromptCount: number
+): Promise<void> {
+  const lastUpdated = Date.now();
+  const existingStats = await ctx.db
+    .query("sandboxAnalyticsStats")
+    .withIndex("by_sandboxId", (q) => q.eq("sandboxId", sandboxId))
+    .first();
+  if (existingStats) {
+    await ctx.db.patch(existingStats._id, {
+      aiPromptCount,
+      linesChanged: 42,
+      lastUpdated,
+    });
+  } else {
+    await ctx.db.insert("sandboxAnalyticsStats", {
+      sandboxId,
+      aiPromptCount,
+      linesChanged: 42,
+      lastUpdated,
+    });
+  }
+}
+
+/** Public mutation to seed analytics. When fillMissingOnly is true, only seeds what is missing (e.g. emotions if only clicks exist, or clicks if only emotions exist). */
 export const seedAnalytics = mutation({
   args: {
     sandboxId: v.string(),
     sessionDurationSeconds: v.optional(v.number()),
+    fillMissingOnly: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const canAccess = await userCanAccessSandboxMutation(ctx, args.sandboxId);
     if (!canAccess) throw new Error("You do not have access to this sandbox");
     const durationSec = args.sessionDurationSeconds ?? 9 * 60; // 9 minutes
+    const fillMissingOnly = args.fillMissingOnly ?? false;
+
+    if (fillMissingOnly) {
+      const sessions = await ctx.db
+        .query("sandboxAnalyticsSessions")
+        .withIndex("by_sandboxId", (q) => q.eq("sandboxId", args.sandboxId))
+        .collect();
+      const existingSession = sessions.sort((a, b) => b.endedAt - a.endedAt)[0];
+      let sessionIdStr: string;
+      let startMs: number;
+      let endMs: number;
+      if (existingSession) {
+        sessionIdStr = existingSession._id as unknown as string;
+        startMs = existingSession.startedAt;
+        endMs = existingSession.endedAt;
+      } else {
+        const startedAt = Date.now() - durationSec * 1000;
+        const endedAt = Date.now();
+        const sessionId = await ctx.db.insert("sandboxAnalyticsSessions", {
+          sandboxId: args.sandboxId,
+          startedAt,
+          endedAt,
+          sessionReplayVideoUrl: DEFAULT_POSTHOG_REPLAY_EMBED_URL,
+          supermemorySummary:
+            "User explored the sandbox, made several UI changes, and used AI to refine the layout. Key moments included adding a sidebar and adjusting colors.",
+        });
+        sessionIdStr = sessionId as unknown as string;
+        startMs = startedAt;
+        endMs = endedAt;
+      }
+
+      const allTelemetry = await ctx.db
+        .query("telemetrySamples")
+        .withIndex("by_sandboxId", (q) => q.eq("sandboxId", args.sandboxId))
+        .collect();
+      const hasHume = allTelemetry.some(
+        (r) => r.sessionId === sessionIdStr && r.source === "hume"
+      );
+      const hasMouse = allTelemetry.some(
+        (r) => r.sessionId === sessionIdStr && r.source === "mouse"
+      );
+
+      if (!hasHume) {
+        await seedEmotionSamplesForSession(
+          ctx,
+          args.sandboxId,
+          sessionIdStr,
+          startMs,
+          endMs
+        );
+      }
+      if (!hasMouse) {
+        await seedMouseSamplesForSession(
+          ctx,
+          args.sandboxId,
+          sessionIdStr,
+          startMs,
+          endMs
+        );
+      }
+
+      const transcriptEntries = await ctx.db
+        .query("sandboxTranscriptEntries")
+        .withIndex("by_sandboxId", (q) => q.eq("sandboxId", args.sandboxId))
+        .collect();
+      const hasTranscript = transcriptEntries.some((e) => e.sessionId === sessionIdStr);
+      let aiPromptCount = TRANSCRIPT_TEXTS.filter((t) => t.isAiPrompt).length;
+      if (!hasTranscript) {
+        await seedTranscriptForSession(
+          ctx,
+          args.sandboxId,
+          sessionIdStr,
+          startMs,
+          endMs
+        );
+      } else {
+        aiPromptCount = transcriptEntries
+          .filter((e) => e.sessionId === sessionIdStr && e.isAiPrompt)
+          .length;
+      }
+
+      const hasStats = (await ctx.db
+        .query("sandboxAnalyticsStats")
+        .withIndex("by_sandboxId", (q) => q.eq("sandboxId", args.sandboxId))
+        .first()) != null;
+      if (!hasStats) {
+        await seedStatsForSandbox(ctx, args.sandboxId, aiPromptCount);
+      }
+
+      return { filled: true };
+    }
+
     const startedAt = Date.now() - durationSec * 1000;
     const endedAt = Date.now();
-
     const sessionId = await ctx.db.insert("sandboxAnalyticsSessions", {
       sandboxId: args.sandboxId,
       startedAt,
@@ -683,156 +881,34 @@ export const seedAnalytics = mutation({
       supermemorySummary:
         "User explored the sandbox, made several UI changes, and used AI to refine the layout. Key moments included adding a sidebar and adjusting colors.",
     });
-
     const startMs = startedAt;
     const endMs = endedAt;
-    const durationMs = endMs - startMs;
     const sessionIdStr = sessionId as unknown as string;
 
-    // Seed Hume telemetry at 1 fps (one sample per second) from startMs to endMs (inclusive).
-    const emotionStepMs = 1000;
-    const numEmotionSamples = Math.max(1, Math.floor(durationMs / emotionStepMs) + 1);
-    for (let i = 0; i < numEmotionSamples; i++) {
-      const t = Math.min(i * emotionStepMs, durationMs);
-      const timestampMs = startMs + t;
-      const phaseProgress = numEmotionSamples <= 1 ? 0 : i / (numEmotionSamples - 1);
-      const weights = randomQuadrantWeights(phaseProgress);
-      const payload = buildHumePayload(weights);
-      await ctx.db.insert("telemetrySamples", {
-        sandboxId: args.sandboxId,
-        sessionId: sessionIdStr,
-        timestampMs,
-        source: "hume",
-        payload,
-      });
-    }
+    await seedEmotionSamplesForSession(
+      ctx,
+      args.sandboxId,
+      sessionIdStr,
+      startMs,
+      endMs
+    );
+    await seedMouseSamplesForSession(
+      ctx,
+      args.sandboxId,
+      sessionIdStr,
+      startMs,
+      endMs
+    );
+    await seedTranscriptForSession(
+      ctx,
+      args.sandboxId,
+      sessionIdStr,
+      startMs,
+      endMs
+    );
+    const aiPromptCount = TRANSCRIPT_TEXTS.filter((t) => t.isAiPrompt).length;
+    await seedStatsForSandbox(ctx, args.sandboxId, aiPromptCount);
 
-    // Seed mouse telemetry over same session window; ensure some intent mismatches for click table.
-    const mouseTags = ["BUTTON", "DIV", "A", "SPAN", "INPUT", "BUTTON", "DIV"];
-    const mouseIds = [
-      "checkout-btn",
-      "login-btn",
-      "submit-btn",
-      "nav",
-      "main",
-      "search-input",
-      "cancel-btn",
-      "save-btn",
-      "add-to-cart",
-      "user-menu",
-      "sidebar-toggle",
-    ];
-    const mouseStepMs = 2000;
-    for (let t = 0; t <= durationMs; t += mouseStepMs) {
-      const timestampMs = startMs + t;
-      const tagIdx = Math.floor(Math.random() * mouseTags.length);
-      const idIdx = Math.floor(Math.random() * mouseIds.length);
-      const underTag = mouseTags[tagIdx]!;
-      const underId = mouseIds[idIdx]!;
-      const mismatch = Math.random() < 0.38;
-      const interactiveTag = mismatch
-        ? (underTag === "BUTTON" ? "DIV" : "BUTTON")
-        : underTag;
-      const interactiveId = mismatch
-        ? mouseIds[(idIdx + 1) % mouseIds.length]!
-        : underId;
-      const x = 100 + Math.random() * 600;
-      const y = 80 + Math.random() * 400;
-      const payload = buildMousePayload(x, y, underTag, underId, interactiveTag, interactiveId);
-      await ctx.db.insert("telemetrySamples", {
-        sandboxId: args.sandboxId,
-        sessionId: sessionIdStr,
-        timestampMs,
-        source: "mouse",
-        payload,
-      });
-    }
-
-    const transcriptTexts: { text: string; isAiPrompt: boolean }[] = [
-      { text: "Let me try opening this panel.", isAiPrompt: false },
-      { text: "Make the header blue and add a logo.", isAiPrompt: true },
-      { text: "That looks good. Can we try a different font?", isAiPrompt: false },
-      { text: "Use Inter for the body and keep the heading bold.", isAiPrompt: true },
-      { text: "I want to add a sidebar on the left.", isAiPrompt: true },
-      { text: "Perfect. Now show the user name at the top right.", isAiPrompt: true },
-      { text: "The layout is a bit cramped on mobile.", isAiPrompt: false },
-      { text: "Make the sidebar collapse on small screens.", isAiPrompt: true },
-      { text: "I think we need more padding around the cards.", isAiPrompt: false },
-      { text: "Add 16px padding to the card container and round the corners.", isAiPrompt: true },
-      { text: "What about dark mode? Does this support it?", isAiPrompt: false },
-      { text: "Add a dark theme using CSS variables for background and text.", isAiPrompt: true },
-      { text: "The button feels a bit small on touch devices.", isAiPrompt: false },
-      { text: "Increase minimum touch target size to 44px for primary buttons.", isAiPrompt: true },
-      { text: "Can we add a loading state when submitting?", isAiPrompt: false },
-      { text: "Show a spinner on the submit button and disable it while loading.", isAiPrompt: true },
-      { text: "The form validation message is easy to miss.", isAiPrompt: false },
-      { text: "Display validation errors in red below each field with an icon.", isAiPrompt: true },
-      { text: "I'd like to see a confirmation before deleting.", isAiPrompt: false },
-      { text: "Add a confirmation dialog when the user clicks delete.", isAiPrompt: true },
-      { text: "The table could use sortable column headers.", isAiPrompt: false },
-      { text: "Make the table headers clickable to sort ascending and descending.", isAiPrompt: true },
-      { text: "We need to handle empty state when there's no data.", isAiPrompt: false },
-      { text: "Show an empty state illustration and message when the list is empty.", isAiPrompt: true },
-      { text: "The search could highlight matching text in results.", isAiPrompt: false },
-      { text: "Highlight the search query in the result snippets.", isAiPrompt: true },
-      { text: "Can we add keyboard shortcuts for power users?", isAiPrompt: false },
-      { text: "Add Ctrl+K for search and Escape to close modals.", isAiPrompt: true },
-      { text: "The tooltip is cut off on the right edge of the screen.", isAiPrompt: false },
-      { text: "Flip tooltip placement when near the viewport edge.", isAiPrompt: true },
-      { text: "I want to export this data as CSV.", isAiPrompt: false },
-      { text: "Add an Export button that downloads the current view as CSV.", isAiPrompt: true },
-      { text: "The chart legend is overlapping the graph on small screens.", isAiPrompt: false },
-      { text: "Move the legend below the chart on viewports under 640px.", isAiPrompt: true },
-      { text: "We should show a success toast after saving.", isAiPrompt: false },
-      { text: "Display a toast notification when the form is saved successfully.", isAiPrompt: true },
-      { text: "The nav could indicate the current page more clearly.", isAiPrompt: false },
-      { text: "Add an active state and subtle background to the current nav item.", isAiPrompt: true },
-      { text: "That should be enough to test the auto-scroll and highlighting.", isAiPrompt: false },
-    ];
-
-    // Transcript spans same time as emotion timeline: first at startMs, last at endMs.
-    const transcriptSegmentMs =
-      transcriptTexts.length <= 1
-        ? 0
-        : (endMs - startMs) / (transcriptTexts.length - 1);
-    for (let i = 0; i < transcriptTexts.length; i++) {
-      const item = transcriptTexts[i]!;
-      const timestampMs =
-        transcriptTexts.length <= 1
-          ? startMs
-          : Math.round(startMs + i * transcriptSegmentMs);
-      await ctx.db.insert("sandboxTranscriptEntries", {
-        sandboxId: args.sandboxId,
-        sessionId: sessionIdStr,
-        timestampMs,
-        text: item.text,
-        isAiPrompt: item.isAiPrompt,
-        fromMic: false,
-      });
-    }
-
-    const aiPromptCount = transcriptTexts.filter((t) => t.isAiPrompt).length;
-    const lastUpdated = Date.now();
-    const existingStats = await ctx.db
-      .query("sandboxAnalyticsStats")
-      .withIndex("by_sandboxId", (q) => q.eq("sandboxId", args.sandboxId))
-      .first();
-
-    if (existingStats) {
-      await ctx.db.patch(existingStats._id, {
-        aiPromptCount,
-        linesChanged: 42,
-        lastUpdated,
-      });
-    } else {
-      await ctx.db.insert("sandboxAnalyticsStats", {
-        sandboxId: args.sandboxId,
-        aiPromptCount,
-        linesChanged: 42,
-        lastUpdated,
-      });
-    }
-
-    return { sessionId, transcriptCount: transcriptTexts.length };
+    return { sessionId, transcriptCount: TRANSCRIPT_TEXTS.length };
   },
 });

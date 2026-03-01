@@ -70,7 +70,7 @@ export function EmotionPieCard({ emotionSamples, emotionScores }: EmotionPieCard
   }, [emotionSamples]);
 
   return (
-    <Card className="overflow-visible">
+    <Card className="overflow-visible col-span-2">
       <CardHeader className="pb-2">
         <CardTitle className="text-base">Emotion split</CardTitle>
       </CardHeader>

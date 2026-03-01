@@ -55,7 +55,7 @@ export function ClickDataCard({
   const list = missedClicks ?? [];
 
   return (
-    <Card className="col-span-3 border bg-muted/30">
+    <Card className="col-span-2 border bg-muted/30">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
           <MousePointer2 className="size-4" />

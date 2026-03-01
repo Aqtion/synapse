@@ -5,7 +5,6 @@ import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
 import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { EmotionTimelineChart } from "@/components/analytics/EmotionTimelineChart";
 import { AnalyticsTranscript } from "@/components/analytics/AnalyticsTranscript";
 import { EmotionPieCard } from "@/components/analytics/EmotionPieCard";
@@ -60,6 +59,7 @@ export default function SandboxAnalyticsPage() {
   );
 
   const seedAnalytics = useMutation(api.analytics.seedAnalytics);
+  const hasTriggeredSeed = useRef(false);
 
   const [playheadTimeMs, setPlayheadTimeMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -120,6 +120,13 @@ export default function SandboxAnalyticsPage() {
     }
   }, [sandbox_id, user_id, project_id, sandbox, router]);
 
+  // Auto-seed any missing analytics data (session, emotions, clicks, transcript, stats) so we never show empty state.
+  useEffect(() => {
+    if (!sandbox_id || hasTriggeredSeed.current) return;
+    hasTriggeredSeed.current = true;
+    seedAnalytics({ sandboxId: sandbox_id, fillMissingOnly: true });
+  }, [sandbox_id, seedAnalytics]);
+
   const playheadClamped = useMemo(() => {
     if (sessionStartMs === 0 && sessionEndMs === 0) return 0;
     return Math.max(sessionStartMs, Math.min(sessionEndMs, playheadTimeMs || sessionStartMs));
@@ -149,29 +156,13 @@ export default function SandboxAnalyticsPage() {
 
   if (sandbox === null) return null;
 
-  // Show analytics layout (and never show seed) if there's any session or any telemetry (mouse, emotion, etc.) for this sandbox.
-  // Only show seed prompt when we've confirmed both are missing (hasTelemetry === false and no session).
   const hasData = session != null || hasTelemetry !== false;
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6 overflow-visible">
-        {!hasData && (
-          <div className="mb-4 flex items-center justify-between">
-            <Button
-              variant="secondary"
-              onClick={() => seedAnalytics({ sandboxId: sandbox_id })}
-            >
-              Load demo data
-            </Button>
-          </div>
-        )}
-
       {!hasData ? (
-        <div className="rounded-lg border border-dashed border-muted-foreground/30 bg-muted/20 p-12 text-center text-muted-foreground">
-          <p className="mb-4">No analytics data for this sandbox yet.</p>
-          <Button onClick={() => seedAnalytics({ sandboxId: sandbox_id })}>
-            Seed demo analytics
-          </Button>
+        <div className="min-h-[50vh] flex items-center justify-center">
+          <Loader2 className="size-8 animate-spin text-muted-foreground" aria-label="Loading analytics" />
         </div>
       ) : (
         <>

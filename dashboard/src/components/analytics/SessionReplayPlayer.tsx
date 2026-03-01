@@ -29,6 +29,13 @@ function postToReplayIframe(
   }
 }
 
+function formatTimeMs(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export type ReplayControlsOverlayProps = {
   isPlaying: boolean;
   playbackRate: number;
@@ -36,6 +43,10 @@ export type ReplayControlsOverlayProps = {
   onSeekBack10: () => void;
   onSeekForward10: () => void;
   onPlaybackRateCycle: () => void;
+  /** Current time in the replay (ms from start). If set with durationMs, shows "current / total" in the left corner. */
+  currentTimeMs?: number;
+  /** Total duration of the replay in ms. */
+  durationMs?: number;
 };
 
 export function ReplayControlsOverlay({
@@ -45,68 +56,77 @@ export function ReplayControlsOverlay({
   onSeekBack10,
   onSeekForward10,
   onPlaybackRateCycle,
+  currentTimeMs,
+  durationMs,
 }: ReplayControlsOverlayProps) {
+  const timeLabel =
+    currentTimeMs != null && durationMs != null && durationMs > 0
+      ? `${formatTimeMs(currentTimeMs)} / ${formatTimeMs(durationMs)}`
+      : null;
+
   return (
-    <>
-      <div
-        className="absolute inset-0 flex items-end justify-center pb-4 transition-opacity duration-200 opacity-0 group-hover:opacity-100 pointer-events-none z-20"
-      >
-        <div className="flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 pointer-events-auto">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSeekBack10();
-            }}
-            className="flex size-9 items-center justify-center rounded-md text-white hover:bg-white/20 transition-colors"
-            aria-label="Back 10 seconds"
-          >
-            <RotateCcw className="size-5" />
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onPlayPauseToggle();
-            }}
-            className="flex size-9 items-center justify-center rounded-md text-white hover:bg-white/20 transition-colors"
-            aria-label={isPlaying ? "Pause" : "Play"}
-          >
-            {isPlaying ? (
-              <Pause className="size-5" />
-            ) : (
-              <Play className="size-5 ml-0.5" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSeekForward10();
-            }}
-            className="flex size-9 items-center justify-center rounded-md text-white hover:bg-white/20 transition-colors"
-            aria-label="Forward 10 seconds"
-          >
-            <RotateCw className="size-5" />
-          </button>
-        </div>
+    <div
+      className="absolute inset-x-0 bottom-4 flex items-center justify-between px-4 transition-opacity duration-200 opacity-0 group-hover:opacity-100 pointer-events-none z-20"
+    >
+      <div className="min-w-[6rem] flex items-center justify-start">
+        {timeLabel != null && (
+          <span className="rounded-md bg-black/70 px-2.5 py-1.5 text-xs font-mono tabular-nums text-white pointer-events-auto">
+            {timeLabel}
+          </span>
+        )}
       </div>
-      <div
-        className="absolute bottom-4 right-4 transition-opacity duration-200 opacity-0 group-hover:opacity-100 pointer-events-none"
-      >
+      <div className="flex items-center gap-2 rounded-lg bg-black/70 px-3 py-2 pointer-events-auto">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSeekBack10();
+          }}
+          className="flex size-9 items-center justify-center rounded-md text-white hover:bg-white/20 transition-colors"
+          aria-label="Back 10 seconds"
+        >
+          <RotateCcw className="size-5" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPlayPauseToggle();
+          }}
+          className="flex size-9 items-center justify-center rounded-md text-white hover:bg-white/20 transition-colors"
+          aria-label={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? (
+            <Pause className="size-5" />
+          ) : (
+            <Play className="size-5 ml-0.5" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSeekForward10();
+          }}
+          className="flex size-9 items-center justify-center rounded-md text-white hover:bg-white/20 transition-colors"
+          aria-label="Forward 10 seconds"
+        >
+          <RotateCw className="size-5" />
+        </button>
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
             onPlaybackRateCycle();
           }}
-          className="rounded-md bg-black/70 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-black/80 transition-colors pointer-events-auto"
+          className="flex size-9 items-center justify-center rounded-md text-white hover:bg-white/20 transition-colors font-medium text-sm min-w-[2.25rem]"
           aria-label="Playback speed"
         >
           {playbackRate}x
         </button>
       </div>
-    </>
+      <div className="min-w-[6rem]" aria-hidden />
+    </div>
   );
 }
 

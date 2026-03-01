@@ -13,18 +13,9 @@ import { ChartContainer, ChartTooltip, type ChartConfig } from "@/components/ui/
 import {
   EMOTION_CATEGORY_COLORS,
   EMOTION_CATEGORY_LABELS,
-  getEmotionsInQuadrant,
   type EmotionCategory,
-  type Quadrant,
 } from "@/lib/emotion-categories";
 import { ReplayControlsOverlay } from "@/components/analytics/SessionReplayPlayer";
-
-const LEGACY_KEY_TO_QUADRANT: Record<EmotionCategory, Quadrant> = {
-  lowEnergyUnpleasant: "unpleasantLowEnergy",
-  lowEnergyPleasant: "pleasantLowEnergy",
-  highEnergyPleasant: "pleasantHighEnergy",
-  highEnergyUnpleasant: "unpleasantHighEnergy",
-};
 
 export type EmotionSample = {
   timestampMs: number;
@@ -65,16 +56,6 @@ type ChartCoreProps = {
   emotionScores?: Record<string, number> | null;
 };
 
-function getTopEmotionInQuadrant(quadrant: Quadrant, emotionScores: Record<string, number>): string | null {
-  const emotions = getEmotionsInQuadrant(quadrant);
-  if (emotions.length === 0) return null;
-  const withScores = emotions
-    .map((name) => ({ name, score: emotionScores[name] ?? 0 }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score);
-  return withScores[0]?.name ?? null;
-}
-
 const EmotionChartCore = memo(function EmotionChartCore({
   data,
   durationMs,
@@ -108,23 +89,16 @@ const EmotionChartCore = memo(function EmotionChartCore({
           <div className="grid gap-1">
             {rows.map((row) => {
               const pct = `${(row.value * 100).toFixed(0)}%`;
-              const quadrant = LEGACY_KEY_TO_QUADRANT[row.key];
-              const topSub = emotionScores && quadrant ? getTopEmotionInQuadrant(quadrant, emotionScores) : null;
               return (
-                <div key={row.key} className="flex flex-col gap-0.5">
-                  <div className="flex w-full items-center justify-between gap-4">
-                    {row.color != null && (
-                      <div
-                        className="h-2.5 w-2.5 shrink-0 rounded-[2px] border border-border"
-                        style={{ backgroundColor: row.color, borderColor: row.color }}
-                      />
-                    )}
-                    <span className="flex-1 text-muted-foreground">{row.label}</span>
-                    <span className="font-mono font-medium tabular-nums text-foreground">{pct}</span>
-                  </div>
-                  {topSub != null && (
-                    <div className="pl-4 text-muted-foreground/90">{topSub}</div>
+                <div key={row.key} className="flex w-full items-center justify-between gap-4">
+                  {row.color != null && (
+                    <div
+                      className="h-2.5 w-2.5 shrink-0 rounded-[2px] border border-border"
+                      style={{ backgroundColor: row.color, borderColor: row.color }}
+                    />
                   )}
+                  <span className="flex-1 text-muted-foreground">{row.label}</span>
+                  <span className="font-mono font-medium tabular-nums text-foreground">{pct}</span>
                 </div>
               );
             })}
@@ -132,7 +106,7 @@ const EmotionChartCore = memo(function EmotionChartCore({
         </div>
       );
     },
-    [emotionScores],
+    [],
   );
 
   return (
@@ -368,6 +342,8 @@ function EmotionTimelineChartInner({
             onSeekBack10={onSeekBack10}
             onSeekForward10={onSeekForward10}
             onPlaybackRateCycle={onPlaybackRateCycle}
+            currentTimeMs={playheadTimeMs - sessionStartMs}
+            durationMs={durationMs}
           />
         )}
       </div>
