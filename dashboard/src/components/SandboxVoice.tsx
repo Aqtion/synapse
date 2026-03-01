@@ -1,356 +1,295 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, Minus, Plus } from "lucide-react";
-import { refinePrompt, runPrompt } from "@/lib/workerClient";
-import { cn } from "@/lib/utils";
 
-const SAMPLE_RATE = 16000;
+const WS_PATH = "/ws/stt";
+const TARGET_SAMPLE_RATE = 16000;
 
-function toBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin);
+function getWsUrl(): string {
+  if (typeof window === "undefined") return "";
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}${WS_PATH}`;
 }
 
-export function SandboxVoice({ sandboxId }: { sandboxId: string }) {
-  const [sttReady, setSttReady] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
-  const [transcript, setTranscript] = useState({ committed: "", partial: "" });
-  const [isHolding, setIsHolding] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [refinedPromptDisplay, setRefinedPromptDisplay] = useState<string | null>(null);
-  const [transcriptMinimized, setTranscriptMinimized] = useState(false);
+function downsampleTo16k(float32: Float32Array, sourceSampleRate: number): Int16Array {
+  const ratio = sourceSampleRate / TARGET_SAMPLE_RATE;
+  const outLength = Math.floor(float32.length / ratio);
+  const out = new Int16Array(outLength);
+  for (let i = 0; i < outLength; i++) {
+    const srcIndex = i * ratio;
+    const idx = Math.floor(srcIndex);
+    const frac = srcIndex - idx;
+    const next = idx + 1 < float32.length ? float32[idx + 1] : float32[idx];
+    const sample = float32[idx] * (1 - frac) + next * frac;
+    const s16 = Math.max(-32768, Math.min(32767, Math.round(sample * 32767)));
+    out[i] = s16;
+  }
+  return out;
+}
+
+function int16ToBase64(int16: Int16Array): string {
+  const u8 = new Uint8Array(int16.buffer, int16.byteOffset, int16.byteLength);
+  let binary = "";
+  for (let i = 0; i < u8.length; i++) binary += String.fromCharCode(u8[i]);
+  return btoa(binary);
+}
+
+type SandboxVoiceProps = {
+  sandboxId: string;
+  workerBaseUrl: string;
+};
+
+export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
+  const [transcriptLines, setTranscriptLines] = useState<string[]>([]);
+  const [segmentLines, setSegmentLines] = useState<string[]>([]);
+  const [isMicDown, setIsMicDown] = useState(false);
+  const [sttError, setSttError] = useState<string | null>(null);
+  const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [isListening, setIsListening] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const workletRef = useRef<AudioWorkletNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const committedRef = useRef("");
-  const partialRef = useRef("");
-  const captureStartRef = useRef(0);
-  const mountedRef = useRef(true);
-  const transcriptBoxRef = useRef<HTMLDivElement>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const isMicDownRef = useRef(false);
+  const currentPartialRef = useRef("");
 
-  const connectSTT = useCallback(async () => {
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, sampleRate: SAMPLE_RATE },
+  const getIframe = useCallback(() => {
+    return document.getElementById("sandboxFrame") as HTMLIFrameElement | null;
+  }, []);
+
+  const appendTranscript = useCallback((text: string, isPartial: boolean) => {
+    if (!text.trim()) return;
+    if (isPartial) {
+      currentPartialRef.current = text;
+      setTranscriptLines((prev) => {
+        const rest = prev.slice(0, -1);
+        const last = prev[prev.length - 1];
+        if (last !== undefined && last.startsWith("…")) return [...rest, "… " + text];
+        return [...prev, "… " + text];
       });
-    } catch {
-      setStatus("Microphone access denied.");
       return;
     }
-    if (!mountedRef.current) {
-      stream.getTracks().forEach((t) => t.stop());
-      return;
-    }
-    streamRef.current = stream;
-
-    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-    audioCtxRef.current = ctx;
-
-    try {
-      await ctx.audioWorklet.addModule("/audio-processor.js");
-    } catch {
-      setStatus("Failed to load audio processor.");
-      stream.getTracks().forEach((t) => t.stop());
-      return;
-    }
-
-    const source = ctx.createMediaStreamSource(stream);
-    const worklet = new AudioWorkletNode(ctx, "pcm-processor");
-    sourceRef.current = source;
-    workletRef.current = worklet;
-
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws/stt`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    committedRef.current = "";
-    partialRef.current = "";
-
-    ws.onopen = () => {
-      setSttReady(true);
-      setStatus(null);
-    };
-
-    ws.onmessage = (evt) => {
-      try {
-        const msg = JSON.parse(evt.data as string) as { type?: string; text?: string };
-        if (msg.type === "partial_transcript") {
-          partialRef.current = msg.text ?? "";
-          setTranscript((prev) => ({ ...prev, partial: partialRef.current }));
-        } else if (msg.type === "committed_transcript") {
-          const text = msg.text ?? "";
-          committedRef.current += (committedRef.current ? " " : "") + text;
-          partialRef.current = "";
-          setTranscript({ committed: committedRef.current, partial: "" });
-        } else if (msg.type === "error") {
-          setStatus(`Error: ${(msg as { message?: string }).message ?? "Unknown"}`);
-        }
-      } catch {}
-    };
-
-    ws.onclose = () => {
-      setSttReady(false);
-      if (mountedRef.current) {
-        setTimeout(() => {
-          if (mountedRef.current) connectSTT();
-        }, 2000);
-      }
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
-
-    worklet.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "input_audio_chunk",
-            audioBase64: toBase64(e.data),
-            sampleRate: ctx.sampleRate,
-          }),
-        );
-      }
-    };
-
-    source.connect(worklet);
-    worklet.connect(ctx.destination);
+    currentPartialRef.current = "";
+    setTranscriptLines((prev) => {
+      const rest = prev.slice(0, -1).filter((l) => !l.startsWith("…"));
+      return [...rest, text];
+    });
+    if (isMicDownRef.current) setSegmentLines((prev) => [...prev, text]);
   }, []);
 
   useEffect(() => {
-    mountedRef.current = true;
-    connectSTT();
-    return () => {
-      mountedRef.current = false;
-      workletRef.current?.disconnect();
-      sourceRef.current?.disconnect();
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      audioCtxRef.current?.close();
-      wsRef.current?.close();
+    let cancelled = false;
+    const url = getWsUrl();
+    if (!url) return;
+
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+    setSttError(null);
+
+    ws.onopen = () => {
+      if (cancelled) return;
+      setIsListening(true);
     };
-  }, [connectSTT]);
 
-  const onHoldStart = useCallback(() => {
-    if (isProcessing) return;
-    captureStartRef.current = committedRef.current.length;
-    setIsHolding(true);
-  }, [isProcessing]);
-
-  const onHoldEnd = useCallback(async () => {
-    if (!isHolding) return;
-    setIsHolding(false);
-
-    const newCommitted = committedRef.current.slice(captureStartRef.current);
-    const captured = (newCommitted + (partialRef.current ? " " + partialRef.current : "")).trim();
-
-    if (!captured) {
-      setStatus("No speech captured.");
-      setTimeout(() => setStatus(null), 2000);
-      return;
-    }
-
-    setIsProcessing(true);
-    setStatus("Refining prompt…");
-    setRefinedPromptDisplay(null);
-
-    try {
-      const { refinedPrompt: refined } = await refinePrompt({ sandboxId, prompt: captured });
-      setRefinedPromptDisplay(refined);
-      setStatus("Asking sandbox…");
-
-      const result = await runPrompt({
-        sandboxId,
-        prompt: refined,
-        refinedPrompt: refined,
-      });
-
-      let message: string;
-      if ("success" in result && result.success) {
-        const parts = [
-          ...(result.written ?? []),
-          ...(result.deleted ?? []).map((f) => `${f} (deleted)`),
-        ];
-        message = parts.length
-          ? `Updated ${parts.length} file(s): ${parts.join(", ")}`
-          : "No files changed.";
-      } else {
-        message = `Error: ${"error" in result ? result.error : "Unknown error"}`;
-      }
-
-      const iframe = document.getElementById("sandboxFrame") as HTMLIFrameElement | null;
-      if (iframe) iframe.src = iframe.src;
-
-      setStatus("Speaking…");
-      const ttsRes = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: message }),
-      });
-      if (ttsRes.ok) {
-        const blob = await ttsRes.blob();
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
-        audio.onended = () => URL.revokeObjectURL(url);
-        await audio.play();
-      }
-      setStatus(null);
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setStatus(`Error: ${errMsg}`);
-      setRefinedPromptDisplay(null);
+    ws.onmessage = (event) => {
+      if (cancelled) return;
       try {
-        const ttsRes = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: `Error: ${errMsg}` }),
-        });
-        if (ttsRes.ok) {
-          const blob = await ttsRes.blob();
-          const url = URL.createObjectURL(blob);
-          const audio = new Audio(url);
-          audio.onended = () => URL.revokeObjectURL(url);
-          await audio.play();
+        const msg = JSON.parse(event.data as string);
+        if (msg.type === "partial_transcript" && msg.text != null) {
+          appendTranscript(msg.text, true);
+        } else if (msg.type === "committed_transcript" && msg.text != null) {
+          appendTranscript(msg.text, false);
+        } else if (msg.type === "error") {
+          setSttError(msg.message || "STT error");
+        } else if (msg.type === "upstream_closed") {
+          setSttError(msg.reason || "STT connection closed");
         }
-      } catch {}
-    } finally {
-      setIsProcessing(false);
-      setRefinedPromptDisplay(null);
-    }
-  }, [isHolding, sandboxId]);
+      } catch (_) {
+        // ignore
+      }
+    };
 
-  const displayTranscript = transcript.committed + (transcript.partial ? ` ${transcript.partial}` : "");
+    ws.onclose = () => {
+      if (!cancelled) setIsListening(false);
+      wsRef.current = null;
+    };
+
+    ws.onerror = () => {
+      if (!cancelled) setSttError("WebSocket error");
+    };
+
+    return () => {
+      cancelled = true;
+      if (ws.readyState === WebSocket.OPEN) ws.close();
+      wsRef.current = null;
+    };
+  }, [appendTranscript]);
 
   useEffect(() => {
-    const el = transcriptBoxRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [transcript]);
+    if (!isListening || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+    let audioContext: AudioContext | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let processor: ScriptProcessorNode | null = null;
+
+    navigator.mediaDevices
+      .getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } })
+      .then((stream) => {
+        streamRef.current = stream;
+        const ctx = new AudioContext({ sampleRate: 48000 });
+        audioContextRef.current = ctx;
+        audioContext = ctx;
+        const src = ctx.createMediaStreamSource(stream);
+        source = src;
+        const bufferSize = 4096;
+        const proc = ctx.createScriptProcessor(bufferSize, 1, 1);
+        processor = proc;
+        proc.onaudioprocess = (e) => {
+          const ws = wsRef.current;
+          if (!ws || ws.readyState !== WebSocket.OPEN) return;
+          const input = e.inputBuffer.getChannelData(0);
+          const int16 = downsampleTo16k(input, ctx.sampleRate);
+          const b64 = int16ToBase64(int16);
+          try {
+            ws.send(JSON.stringify({ type: "input_audio_chunk", audioBase64: b64, sampleRate: TARGET_SAMPLE_RATE }));
+          } catch (_) {}
+        };
+        src.connect(proc);
+        proc.connect(ctx.destination);
+      })
+      .catch((err) => {
+        setSttError(err.message || "Microphone access denied");
+      });
+
+    return () => {
+      if (processor && source) {
+        try {
+          source.disconnect();
+          processor.disconnect();
+        } catch (_) {}
+      }
+      if (audioContext) audioContext.close();
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      audioContextRef.current = null;
+    };
+  }, [isListening]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      const d = event.data;
+      if (!d || d.type !== "SANDBOX_RESPONSE" || typeof d.text !== "string") return;
+      const text = d.text.trim();
+      if (!text) return;
+
+      setTtsPlaying(true);
+      fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error("TTS failed");
+          return res.arrayBuffer();
+        })
+        .then((buf) => {
+          const blob = new Blob([buf], { type: "audio/mpeg" });
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.onended = () => {
+            URL.revokeObjectURL(url);
+            setTtsPlaying(false);
+          };
+          audio.onerror = () => {
+            URL.revokeObjectURL(url);
+            setTtsPlaying(false);
+          };
+          audio.play();
+        })
+        .catch(() => setTtsPlaying(false));
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
+
+  const handleMicDown = useCallback(() => {
+    isMicDownRef.current = true;
+    setSegmentLines([]);
+    setIsMicDown(true);
+  }, []);
+
+  const handleMicUp = useCallback(() => {
+    if (!isMicDown) return;
+    isMicDownRef.current = false;
+    setIsMicDown(false);
+    const segmentText = [...segmentLines];
+    if (currentPartialRef.current.trim()) segmentText.push(currentPartialRef.current);
+    const text = segmentText.join(" ").trim();
+    if (!text) return;
+
+    const iframe = getIframe();
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage({ type: "VOICE_PROMPT", text }, "*");
+    }
+    setSegmentLines([]);
+  }, [isMicDown, segmentLines, getIframe]);
+
+  const displayLines = transcriptLines;
+  const popupContent = displayLines.length === 0 && !currentPartialRef.current ? "" : displayLines.join(" ");
 
   return (
     <>
-      {isProcessing && (
+      <div
+        className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2"
+        style={{ pointerEvents: "none" }}
+        aria-hidden
+      >
         <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(11,13,17,.85)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 14,
-            zIndex: 40,
-            backdropFilter: "blur(4px)",
-          }}
+          className="pointer-events-auto flex max-h-[140px] min-h-[44px] w-[280px] flex-col overflow-hidden rounded-xl border border-border bg-background/95 shadow-lg backdrop-blur"
+          role="log"
+          aria-live="polite"
         >
-          <div
-            style={{
-              width: 28,
-              height: 28,
-              border: "3px solid #252a35",
-              borderTopColor: "#8187de",
-              borderRadius: "50%",
-              animation: "voice-spin .8s linear infinite",
-            }}
-          />
-          <p style={{ fontSize: 13, color: "#7a8194" }}>
-            {status === "Speaking…" ? "Speaking…" : "AI is updating your app…"}
-          </p>
-          {refinedPromptDisplay && (
-            <div
-              style={{
-                maxWidth: "min(90vw, 420px)",
-                padding: "12px 16px",
-                background: "rgba(36, 23, 30, 0.9)",
-                border: "1px solid #252a35",
-                borderRadius: 12,
-                marginTop: 8,
-              }}
-            >
-              <p style={{ fontSize: 11, color: "#7a8194", marginBottom: 6 }}>
-                Refined prompt sent to AI:
-              </p>
-              <p style={{ fontSize: 13, color: "#e4e7ed", lineHeight: 1.45 }}>
-                {refinedPromptDisplay}
-              </p>
-            </div>
-          )}
-          <style>{`@keyframes voice-spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      )}
-
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
-        {!isProcessing && sttReady && (
-          <div
-            className="rounded-lg border border-border bg-background/95 shadow-lg backdrop-blur overflow-hidden transition-all"
-            style={{ width: 260 }}
-          >
-            <div
-              className="flex items-center justify-between px-3 py-1.5 border-b border-border cursor-pointer select-none"
-              onClick={() => setTranscriptMinimized((v) => !v)}
-            >
-              <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
-                <span className="inline-block h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                Transcript
-              </span>
-              {transcriptMinimized ? (
-                <Plus className="size-3 text-muted-foreground" />
-              ) : (
-                <Minus className="size-3 text-muted-foreground" />
-              )}
-            </div>
-            {!transcriptMinimized && (
-              <div
-                ref={transcriptBoxRef}
-                className="px-3 py-2 text-xs leading-relaxed text-muted-foreground overflow-y-auto"
-                style={{ maxHeight: 140 }}
-              >
-                {displayTranscript ? (
-                  <p>
-                    {transcript.committed && <span>{transcript.committed}</span>}
-                    {transcript.partial && (
-                      <span className="italic text-muted-foreground/80"> {transcript.partial}</span>
-                    )}
-                    <span className="ml-0.5 inline-block h-3 w-0.5 animate-pulse bg-primary" />
-                  </p>
-                ) : (
-                  <p className="italic">Listening…</p>
-                )}
-              </div>
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 text-sm text-muted-foreground">
+            {sttError ? (
+              <p className="text-destructive">{sttError}</p>
+            ) : (
+              <p className="whitespace-pre-wrap break-words">{popupContent || "Listening…"}</p>
             )}
           </div>
-        )}
-        {!isProcessing && status && (
-          <div className="rounded-lg border border-border bg-background/95 px-3 py-2 text-sm shadow-lg backdrop-blur" style={{ width: 260 }}>
-            <p className="text-muted-foreground text-xs">{status}</p>
-          </div>
-        )}
+        </div>
         <button
           type="button"
-          onMouseDown={onHoldStart}
-          onMouseUp={onHoldEnd}
-          onMouseLeave={() => { if (isHolding) onHoldEnd(); }}
-          onTouchStart={onHoldStart}
-          onTouchEnd={onHoldEnd}
-          disabled={isProcessing || !sttReady}
-          title="Hold to capture voice for AI"
-          className={cn(
-            "flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 shadow-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50",
-            isHolding
-              ? "border-red-500 bg-red-500 text-white scale-110"
-              : sttReady
-                ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
-                : "border-muted bg-muted text-muted-foreground",
-          )}
+          onMouseDown={handleMicDown}
+          onMouseUp={handleMicUp}
+          onMouseLeave={handleMicUp}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            handleMicDown();
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            handleMicUp();
+          }}
+          onTouchCancel={handleMicUp}
+          disabled={!isListening || ttsPlaying}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-border bg-background shadow-md transition hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+          style={{ pointerEvents: "auto" }}
+          aria-label={isMicDown ? "Release to send" : "Hold to speak and send"}
         >
-          <Mic className="size-6" strokeWidth={2} />
+          {ttsPlaying ? (
+            <span className="text-xs text-muted-foreground">…</span>
+          ) : (
+            <svg
+              className={`h-5 w-5 text-foreground ${isMicDown ? "text-primary" : ""}`}
+              fill="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden
+            >
+              <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+            </svg>
+          )}
         </button>
       </div>
     </>
