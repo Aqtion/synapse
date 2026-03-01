@@ -245,24 +245,14 @@ export default {
       });
     }
 
-    // ── Preview: serve files from this sandbox (inject PostHog into HTML so preview iframe records) ──
+    // ── Preview: serve files from this sandbox ──
     if (sub.startsWith('preview')) {
       try {
         const sandbox = getSandbox(env.Sandbox, sandboxId);
         let filePath = sub.replace(/^preview\/?/, '') || 'index.html';
         if (filePath.endsWith('/')) filePath += 'index.html';
         const file = await sandbox.readFile(`${APP_DIR}/${filePath}`);
-        let content = file.content;
-        const isHtml =
-          filePath.endsWith('.html') ||
-          filePath.endsWith('.htm') ||
-          (typeof content === 'string' && (content.trimStart().toLowerCase().startsWith('<!doctype') || content.trimStart().toLowerCase().startsWith('<html')));
-        if (isHtml && typeof content === 'string') {
-          content = content.includes('</head>')
-            ? content.replace('</head>', POSTHOG_LISTENER_SCRIPT + '\n</head>')
-            : content.replace(/<body(\s[^>]*)?>/i, POSTHOG_LISTENER_SCRIPT + '\n<body$1>');
-        }
-        return new Response(content, {
+        return new Response(file.content, {
           headers: corsHeaders({ 'Content-Type': mimeFor(filePath) }),
         });
       } catch {
