@@ -893,6 +893,216 @@ export const createPullRequest = action({
   },
 });
 
+/**
+ * Creates a single aggregated PR that combines files from multiple sandboxes.
+ * Each sandbox's files are placed under sandbox/{sandboxId}/ in the branch.
+ * Only the project owner can call this.
+ */
+export const aggregatePullRequests = action({
+  args: {
+    projectId: v.string(),
+    sandboxIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    if (args.sandboxIds.length === 0) throw new Error("No sandboxes selected");
+
+    const workerBase = process.env.WORKER_BASE_URL;
+    const githubToken = process.env.GITHUB_TOKEN;
+    if (!workerBase) throw new Error("WORKER_BASE_URL is not set");
+    if (!githubToken) throw new Error("GITHUB_TOKEN is not set");
+
+    // Verify caller owns the project
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Must be signed in");
+    const userId = (identity as { subject?: string }).subject;
+    if (!userId) throw new Error("Invalid identity");
+
+    const project = await ctx.runQuery(internal.projects.getProjectById, {
+      projectId: args.projectId,
+    });
+    if (!project) throw new Error("Project not found");
+    if (project.userId !== userId) throw new Error("Only the project owner can aggregate PRs");
+
+    const githubRepo = project.githubRepo ?? process.env.GITHUB_REPO;
+    if (!githubRepo) throw new Error("No GitHub repo configured for this project");
+
+    // Get main branch SHA
+    const mainRef = await githubFetch(
+      `/repos/${githubRepo}/git/ref/heads/main`,
+      githubToken,
+    );
+    if (!mainRef.ok) throw new Error(`Failed to get main branch: ${mainRef.status}`);
+    const baseSha = ((await mainRef.json()) as { object: { sha: string } }).object.sha;
+
+    // Export files from each sandbox and build tree entries
+    type TreeEntry = { path: string; mode: "100644"; type: "blob"; content: string };
+    const treeEntries: TreeEntry[] = [];
+    const included: string[] = [];
+    const skipped: string[] = [];
+
+    for (const sandboxId of args.sandboxIds) {
+      try {
+        const exportUrl = `${workerBase.replace(/\/$/, "")}/s/${sandboxId}/api/export`;
+        const exportRes = await fetch(exportUrl);
+        if (!exportRes.ok) { skipped.push(sandboxId); continue; }
+        const { files } = (await exportRes.json()) as { files: Record<string, string> };
+        if (!files || Object.keys(files).length === 0) { skipped.push(sandboxId); continue; }
+        for (const [path, content] of Object.entries(files)) {
+          treeEntries.push({ path: `sandbox/${sandboxId}/${path}`, mode: "100644", type: "blob", content });
+        }
+        included.push(sandboxId);
+      } catch {
+        skipped.push(sandboxId);
+      }
+    }
+
+    if (treeEntries.length === 0) throw new Error("No files could be exported from any selected sandbox");
+
+    // ── Fetch per-sandbox change history from Supermemory ────────────────────
+    const smKey = process.env.SUPERMEMORY_API_KEY;
+    const sandboxHistories: Record<string, string[]> = {};
+
+    if (smKey) {
+      await Promise.all(
+        included.map(async (sandboxId) => {
+          try {
+            const searchRes = await fetch(`${SUPERMEMORY_API}/search`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${smKey}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                q: `all changes in sandbox ${sandboxId}`,
+                containerTags: [`sandbox_${sandboxId}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100)],
+                limit: 10,
+              }),
+            });
+            if (!searchRes.ok) return;
+            const data = (await searchRes.json()) as Record<string, unknown>;
+            const results = (data.results ?? []) as Array<{ title?: string; createdAt?: string }>;
+            const titles = results
+              .sort((a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime())
+              .map((r) => r.title?.trim())
+              .filter(Boolean) as string[];
+            if (titles.length > 0) sandboxHistories[sandboxId] = titles;
+          } catch {
+            // non-critical — skip silently
+          }
+        }),
+      );
+    }
+
+    // Create git tree
+    const treeRes = await githubFetch(`/repos/${githubRepo}/git/trees`, githubToken, {
+      method: "POST",
+      body: JSON.stringify({ base_tree: baseSha, tree: treeEntries }),
+    });
+    if (!treeRes.ok) throw new Error(`Failed to create tree: ${treeRes.status}`);
+    const treeSha = ((await treeRes.json()) as { sha: string }).sha;
+
+    // Create commit
+    const commitRes = await githubFetch(`/repos/${githubRepo}/git/commits`, githubToken, {
+      method: "POST",
+      body: JSON.stringify({
+        message: `aggregated: ${included.length} sandbox${included.length === 1 ? "" : "es"}\n\n${included.map((id) => `- sandbox/${id}`).join("\n")}`,
+        tree: treeSha,
+        parents: [baseSha],
+      }),
+    });
+    if (!commitRes.ok) throw new Error(`Failed to create commit: ${commitRes.status}`);
+    const commitSha = ((await commitRes.json()) as { sha: string }).sha;
+
+    // Create or force-update branch
+    const branchName = `aggregated/${args.projectId}`;
+    const existingBranch = await githubFetch(
+      `/repos/${githubRepo}/git/ref/heads/${branchName}`,
+      githubToken,
+    );
+    if (existingBranch.ok) {
+      await githubFetch(`/repos/${githubRepo}/git/refs/heads/${branchName}`, githubToken, {
+        method: "PATCH",
+        body: JSON.stringify({ sha: commitSha, force: true }),
+      });
+    } else {
+      const refRes = await githubFetch(`/repos/${githubRepo}/git/refs`, githubToken, {
+        method: "POST",
+        body: JSON.stringify({ ref: `refs/heads/${branchName}`, sha: commitSha }),
+      });
+      if (!refRes.ok) throw new Error(`Failed to create branch: ${refRes.status}`);
+    }
+
+    // ── Build PR body with per-sandbox history sections ──────────────────────
+    const sandboxSections = included.map((sandboxId) => {
+      const history = sandboxHistories[sandboxId];
+      const header = `### \`sandbox/${sandboxId}\``;
+      if (history && history.length > 0) {
+        return `${header}\n${history.map((t) => `- ${t}`).join("\n")}`;
+      }
+      return `${header}\n_No change history recorded._`;
+    });
+
+    const prBody = [
+      `## Aggregated changes — ${project.name}`,
+      ``,
+      `${included.length} sandbox${included.length === 1 ? "" : "es"} combined into this PR.`,
+      ``,
+      ...sandboxSections,
+      ...(skipped.length > 0
+        ? ["", `> **${skipped.length} sandbox${skipped.length === 1 ? "" : "es"} skipped** (no files or export failed)`]
+        : []),
+    ].join("\n");
+
+    // Build a meaningful title from the first few distinct change titles across all sandboxes
+    const allTitles = included.flatMap((id) => sandboxHistories[id] ?? []);
+    const prTitle = allTitles.length > 0
+      ? `${project.name}: ${allTitles.slice(0, 2).join("; ")}${allTitles.length > 2 ? "…" : ""}`
+      : `Aggregated: ${included.length} sandbox${included.length === 1 ? "" : "es"} (${project.name})`;
+
+    const prRes = await githubFetch(`/repos/${githubRepo}/pulls`, githubToken, {
+      method: "POST",
+      body: JSON.stringify({
+        title: prTitle.slice(0, 255),
+        head: branchName,
+        base: "main",
+        body: prBody,
+      }),
+    });
+
+    let prUrl: string;
+    let prNumber: number;
+
+    if (prRes.ok) {
+      const d = (await prRes.json()) as { html_url: string; number: number };
+      prUrl = d.html_url;
+      prNumber = d.number;
+    } else {
+      const errBody = (await prRes.json()) as { errors?: Array<{ message?: string }> };
+      const alreadyExists = errBody.errors?.some((e) =>
+        e.message?.includes("A pull request already exists"),
+      );
+      if (alreadyExists) {
+        const listRes = await githubFetch(
+          `/repos/${githubRepo}/pulls?head=${githubRepo.split("/")[0]}:${branchName}&state=open`,
+          githubToken,
+        );
+        const prs = (await listRes.json()) as Array<{ html_url: string; number: number }>;
+        if (prs.length > 0) {
+          prUrl = prs[0].html_url;
+          prNumber = prs[0].number;
+          await githubFetch(`/repos/${githubRepo}/pulls/${prNumber}`, githubToken, {
+            method: "PATCH",
+            body: JSON.stringify({ title: prTitle.slice(0, 255), body: prBody }),
+          });
+        } else {
+          throw new Error(`Failed to create aggregated PR: ${prRes.status}`);
+        }
+      } else {
+        throw new Error(`Failed to create aggregated PR: ${prRes.status}`);
+      }
+    }
+
+    return { prUrl, prNumber, included, skipped };
+  },
+});
+
 export const updatePrInfo = internalMutation({
   args: {
     id: v.string(),

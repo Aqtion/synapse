@@ -361,7 +361,7 @@ export default {
         });
       }
       try {
-        const refined = await refinePromptWithGemini(geminiKey, raw);
+        const refined = await refinePromptWithGemini(geminiKey!, raw);
         if (refined && refined !== raw) console.log('[refine] →', refined.slice(0, 80) + (refined.length > 80 ? '...' : ''));
         return json({ refinedPrompt: refined || raw });
       } catch (err) {
@@ -474,8 +474,14 @@ export default {
 
         let changedFiles = parseMultiFile(rawResponse);
         if (Object.keys(changedFiles).length === 0) {
-          const singleHtml = extractSingleHtml(rawResponse);
-          if (singleHtml) changedFiles = { 'index.html': singleHtml };
+          // Only fall back to raw-HTML extraction if the response itself IS HTML
+          // (i.e. the model output only HTML with no prose). Extracting HTML from
+          // a mixed prose+HTML response would silently nuke the whole site.
+          const trimmed = rawResponse.trim();
+          if (trimmed.startsWith('<!DOCTYPE') || trimmed.toLowerCase().startsWith('<html')) {
+            const singleHtml = extractSingleHtml(rawResponse);
+            if (singleHtml) changedFiles = { 'index.html': singleHtml };
+          }
         }
 
         if (Object.keys(changedFiles).length === 0) {
@@ -485,9 +491,62 @@ export default {
           );
         }
 
+        // ── Validate parsed files before writing ──────────────────────────────
+        // Detect rebuild-intent in the prompt so we can allow broader changes.
+        const REBUILD_KEYWORDS = ['rewrite', 'rebuild', 'redesign', 'new site', 'start over',
+          'start fresh', 'redo', 'recreate', 'completely new', 'from scratch'];
+        const isRebuildRequest = REBUILD_KEYWORDS.some(
+          (kw) => promptToUse.toLowerCase().includes(kw),
+        );
+
+        const safeFiles: Record<string, string> = {};
+        for (const [name, content] of Object.entries(changedFiles)) {
+          const trimmedContent = content.trim();
+
+          // Empty content signals a deletion — validate below as a group.
+          if (trimmedContent === '') {
+            safeFiles[name] = '';
+            continue;
+          }
+
+          // HTML files must have real structure.
+          if (name.endsWith('.html')) {
+            const lower = trimmedContent.toLowerCase();
+            if (trimmedContent.length < 200 || !lower.includes('</html>')) {
+              console.warn(`[prompt] skipping ${name}: malformed/too-short HTML (${trimmedContent.length} chars)`);
+              continue;
+            }
+          }
+
+          // CSS files must have meaningful content.
+          if (name.endsWith('.css') && trimmedContent.length < 20) {
+            console.warn(`[prompt] skipping ${name}: CSS too short (${trimmedContent.length} chars)`);
+            continue;
+          }
+
+          safeFiles[name] = content;
+        }
+
+        // Guard against mass-deletion on non-rebuild prompts.
+        // If > 50 % of existing files would be deleted, strip the deletions.
+        const pendingDeletions = Object.values(safeFiles).filter((c) => c.trim() === '').length;
+        if (!isRebuildRequest && filePaths.length > 0 && pendingDeletions / filePaths.length > 0.5) {
+          console.warn(`[prompt] blocking ${pendingDeletions} deletions on non-rebuild prompt`);
+          for (const [name, content] of Object.entries(safeFiles)) {
+            if (content.trim() === '') delete safeFiles[name];
+          }
+        }
+
+        if (Object.keys(safeFiles).length === 0) {
+          return json(
+            { error: 'AI response did not contain any valid file changes. Try rephrasing your prompt.' },
+            { status: 422 }
+          );
+        }
+
         const written: string[] = [];
         const deleted: string[] = [];
-        for (const [name, content] of Object.entries(changedFiles)) {
+        for (const [name, content] of Object.entries(safeFiles)) {
           if (content.trim() === '') {
             try { await sandbox.deleteFile(`${APP_DIR}/${name}`); deleted.push(name); } catch { /* gone */ }
           } else {
@@ -502,7 +561,7 @@ export default {
           .map((f) => f.relativePath);
 
         if (smKey) {
-          ctx.waitUntil(storeMemory(smKey, sandboxId, promptToUse, written, deleted, changedFiles));
+          ctx.waitUntil(storeMemory(smKey, sandboxId, promptToUse, written, deleted, safeFiles));
         }
 
         return json({ success: true, written, deleted, files: allFiles, refinedPrompt: promptToUse });
