@@ -688,6 +688,22 @@ export function SandboxVoice({
                   </motion.p>
                 ))}
               </AnimatePresence>
+              {isProcessing && refinedPromptDisplay && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.25 }}
+                  className="mt-2 w-full max-w-[min(90vw,420px)] rounded-xl border border-white/10 bg-zinc-900/95 px-4 py-3 shadow-lg backdrop-blur-md"
+                >
+                  <p className="text-[11px] text-white/50 mb-1.5">
+                    Refined prompt:
+                  </p>
+                  <p className="text-sm text-white/90 leading-relaxed">
+                    {refinedPromptDisplay}
+                  </p>
+                </motion.div>
+              )}
             </div>
           </motion.div>
         )}
