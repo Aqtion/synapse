@@ -1,16 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "convex/_generated/api";
-import { useHumeStream, getTimestampMsFromHumePayload } from "@/ux_telemetry";
+import { useHumeStream } from "@/ux_telemetry";
 import type { HumeEmotionMap, HumeStreamMessage } from "@/ux_telemetry";
 
 type SandboxHumeTelemetryProps = {
   sandboxId: string;
-  /** Session id for this sandbox view; used to align with other telemetry streams. */
-  sessionId?: string;
-  /** Called when emotion data is received (in addition to Convex write when sessionId is set). */
+  /** Called when emotion data is received (e.g. for future Convex write). */
   onEmotionSample?: (emotions: HumeEmotionMap, raw: HumeStreamMessage) => void;
 };
 
@@ -44,48 +40,26 @@ function emotionToDotColor(emotions: HumeEmotionMap): "green" | "yellow" | "red"
  */
 export function SandboxHumeTelemetry({
   sandboxId,
-  sessionId,
   onEmotionSample,
 }: SandboxHumeTelemetryProps) {
   const onEmotionSampleRef = useRef(onEmotionSample);
   onEmotionSampleRef.current = onEmotionSample;
 
-  const insertHumeSample = useMutation(api.telemetry.insertHumeSample);
-  const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
-
   const [dotColor, setDotColor] = useState<"green" | "yellow" | "red">("yellow");
 
-  const onMessage = useCallback(
-    (emotions: HumeEmotionMap, raw: HumeStreamMessage) => {
-      onEmotionSampleRef.current?.(emotions, raw);
-      setDotColor(emotionToDotColor(emotions));
-
-      const sid = sessionIdRef.current;
-      if (sid) {
-        const timestampMs = getTimestampMsFromHumePayload(raw);
-        insertHumeSample({
-          sandboxId,
-          sessionId: sid,
-          timestampMs,
-          rawPayload: raw,
-        }).catch((e) => {
-          if (process.env.NODE_ENV === "development") {
-            console.warn("[SandboxHumeTelemetry] Convex insert failed:", e);
-          }
-        });
-      }
-    },
-    [sandboxId, insertHumeSample],
-  );
+  const onMessage = useCallback((emotions: HumeEmotionMap, raw: HumeStreamMessage) => {
+    onEmotionSampleRef.current?.(emotions, raw);
+    setDotColor(emotionToDotColor(emotions));
+  }, []);
 
   const { start, stop, videoRef, status, error } = useHumeStream({
     maxFps: 2,
     onMessage,
     onError: (e) => {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[SandboxHumeTelemetry]", e.message);
-      }
+      // if (process.env.NODE_ENV === "development") {
+      //   console.warn("[SandboxHumeTelemetry]", e.message);
+      // }
+      void e;
     },
     enabled: true,
     debug: process.env.NODE_ENV === "development",

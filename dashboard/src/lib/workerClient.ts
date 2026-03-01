@@ -2,9 +2,9 @@ const WORKER_BASE_URL = process.env.NEXT_PUBLIC_WORKER_BASE_URL;
 
 if (!WORKER_BASE_URL) {
   // This will surface clearly in dev if misconfigured.
-  console.warn(
-    "NEXT_PUBLIC_WORKER_BASE_URL is not set; Worker calls will fail at runtime.",
-  );
+  // console.warn(
+  //   "NEXT_PUBLIC_WORKER_BASE_URL is not set; Worker calls will fail at runtime.",
+  // );
 }
 
 async function callWorker<T>(

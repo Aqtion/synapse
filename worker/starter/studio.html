@@ -593,11 +593,27 @@
     }
 
     window.addEventListener('message', function(event) {
-      if (event.data && event.data.type === 'VOICE_PROMPT' && event.data.text) {
-        els.promptInput.value = event.data.text;
+      var d = event.data;
+      if (!d || !d.type) return;
+      if (d.type === 'VOICE_PROMPT' && d.text) {
+        els.promptInput.value = d.text;
         els.sendBtn.disabled = false;
         autoResize(els.promptInput);
         sendPrompt();
+        return;
+      }
+      if (d.type === 'POSTHOG_INIT') {
+        window.__POSTHOG_PREVIEW_CONFIG__ = { apiKey: d.apiKey, apiHost: d.apiHost || 'https://us.i.posthog.com', sandboxId: d.sandboxId };
+        sendPostHogToPreview();
+        return;
+      }
+      if (d.type === 'POSTHOG_STOP') {
+        try {
+          if (els.previewFrame && els.previewFrame.contentWindow) {
+            els.previewFrame.contentWindow.postMessage({ type: 'POSTHOG_STOP' }, '*');
+          }
+        } catch (e) {}
+        return;
       }
     });
 

@@ -240,20 +240,20 @@ export function useHumeStream(
     };
 
     const processParsedMessage = (raw: HumeStreamMessage) => {
-      if (debug && typeof console !== "undefined" && console.log) {
-        const face = getFacePayload(raw);
-        const emotions = emotionsFromMessage(raw);
-        const keys = Object.keys(raw).filter((k) => k !== "face" && k !== "models_success");
-        console.log(
-          "[Hume]",
-          "topKeys:",
-          keys.concat(face ? ["face"] : []),
-          "predictions:",
-          face?.predictions?.length ?? 0,
-          "emotions:",
-          Object.keys(emotions).length ? emotions : "(none)"
-        );
-      }
+      // if (debug && typeof console !== "undefined" && console.log) {
+      //   const face = getFacePayload(raw);
+      //   const emotions = emotionsFromMessage(raw);
+      //   const keys = Object.keys(raw).filter((k) => k !== "face" && k !== "models_success");
+      //   console.log(
+      //     "[Hume]",
+      //     "topKeys:",
+      //     keys.concat(face ? ["face"] : []),
+      //     "predictions:",
+      //     face?.predictions?.length ?? 0,
+      //     "emotions:",
+      //     Object.keys(emotions).length ? emotions : "(none)"
+      //   );
+      // }
       onRawMessage?.(raw);
       const apiError =
         (raw as { error?: string }).error ??
@@ -272,18 +272,18 @@ export function useHumeStream(
     };
 
     const handleMessage = (event: MessageEvent) => {
-      if (debug && typeof console !== "undefined" && console.log) {
-        const t = event.data;
-        console.log("[Hume] message received", typeof t, t instanceof Blob ? "Blob" : t instanceof ArrayBuffer ? "ArrayBuffer" : "");
-      }
+      // if (debug && typeof console !== "undefined" && console.log) {
+      //   const t = event.data;
+      //   console.log("[Hume] message received", typeof t, t instanceof Blob ? "Blob" : t instanceof ArrayBuffer ? "ArrayBuffer" : "");
+      // }
       const parseAndProcess = (text: string) => {
         let raw: HumeStreamMessage;
         try {
           raw = JSON.parse(text) as HumeStreamMessage;
         } catch (e) {
-          if (debug && typeof console !== "undefined" && console.log) {
-            console.log("[Hume] parse failed", text?.slice?.(0, 200));
-          }
+          // if (debug && typeof console !== "undefined" && console.log) {
+          //   console.log("[Hume] parse failed", text?.slice?.(0, 200));
+          // }
           return;
         }
         processParsedMessage(raw);
@@ -296,9 +296,9 @@ export function useHumeStream(
       }
       if (data instanceof Blob) {
         data.text().then(parseAndProcess).catch(() => {
-          if (debug && typeof console !== "undefined" && console.log) {
-            console.log("[Hume] Blob.text() failed");
-          }
+          // if (debug && typeof console !== "undefined" && console.log) {
+          //   console.log("[Hume] Blob.text() failed");
+          // }
         });
         return;
       }
