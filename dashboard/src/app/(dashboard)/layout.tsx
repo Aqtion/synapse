@@ -1,4 +1,4 @@
-import { LandingHeader } from "@/components/LandingHeader";
+import { LandingHeader } from "@/components/landing/LandingHeader";
 
 export default function DashboardLayout({
   children,

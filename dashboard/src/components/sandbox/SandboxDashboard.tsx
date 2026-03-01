@@ -10,9 +10,9 @@ import { SandboxEmptyState } from "./SandboxEmptyState";
 import { SandboxList } from "./SandboxList";
 import type { SandboxEntry } from "./SandboxCard";
 
-type SandboxDashboardProps = { projectId?: string };
+type SandboxDashboardProps = { userId?: string; projectId?: string };
 
-export function SandboxDashboard({ projectId }: SandboxDashboardProps) {
+export function SandboxDashboard({ userId, projectId }: SandboxDashboardProps) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -43,6 +43,7 @@ export function SandboxDashboard({ projectId }: SandboxDashboardProps) {
     <>
       <div className="px-6 py-12">
         <SandboxList
+          userId={userId}
           projectId={projectId}
           onOpenSandbox={handleOpenSandbox}
           onInviteMoreTesters={() => setModalOpen(true)}

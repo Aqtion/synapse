@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAction } from "convex/react";
 import { api } from "convex/_generated/api";
 import {
@@ -13,6 +14,7 @@ import {
   EyeOff,
   Trash2,
   Info,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -55,6 +57,7 @@ export type SandboxEntry = {
 
 type SandboxCardProps = {
   sandbox: SandboxEntry;
+  analyticsHref?: string;
   onOpen: (sandbox: SandboxEntry) => void;
   onRemove: (e: React.MouseEvent, id: string) => void;
   onRename?: (sandbox: SandboxEntry) => void;
@@ -62,7 +65,7 @@ type SandboxCardProps = {
   onDelete?: (e: React.MouseEvent, id: string) => void;
 };
 
-type SandboxMenuItem =
+export type SandboxMenuItem =
   | {
       type: "item";
       id: string;
@@ -76,8 +79,9 @@ type SandboxMenuItem =
     }
   | { type: "separator" };
 
-function buildSandboxMenuItems({
+export function buildSandboxMenuItems({
   sandbox,
+  onOpenAnalytics,
   onRename,
   handleHide,
   handleDelete,
@@ -88,6 +92,7 @@ function buildSandboxMenuItems({
   prResult,
 }: {
   sandbox: SandboxEntry;
+  onOpenAnalytics?: () => void;
   onRename?: (sandbox: SandboxEntry) => void;
   handleHide: (e: React.MouseEvent, id: string) => void;
   handleDelete: (e: React.MouseEvent, id: string) => void;
@@ -105,7 +110,7 @@ function buildSandboxMenuItems({
   };
   const noop = { stopPropagation: () => {} } as React.MouseEvent;
 
-  return [
+  const items: SandboxMenuItem[] = [
     {
       type: "item",
       id: "info",
@@ -125,6 +130,21 @@ function buildSandboxMenuItems({
       onSelect: openInNewTab,
       closeOnSelect: true,
     },
+    ...(onOpenAnalytics
+      ? [
+          {
+            type: "item" as const,
+            id: "analytics",
+            icon: BarChart3,
+            label: "Analytics",
+            onSelect: () => {
+              onOpenAnalytics();
+              onClose?.();
+            },
+            closeOnSelect: true,
+          },
+        ]
+      : []),
     {
       type: "item",
       id: "rename",
@@ -171,16 +191,19 @@ function buildSandboxMenuItems({
       closeOnSelect: true,
     },
   ];
+  return items;
 }
 
 export function SandboxCard({
   sandbox,
+  analyticsHref,
   onOpen,
   onRemove,
   onRename,
   onHide,
   onDelete,
 }: SandboxCardProps) {
+  const router = useRouter();
   const createPR = useAction(api.sandboxes.createPullRequest);
   const [prLoading, setPrLoading] = useState(false);
   const [prResult, setPrResult] = useState<string | null>(
@@ -207,6 +230,7 @@ export function SandboxCard({
 
   const menuItems = buildSandboxMenuItems({
     sandbox,
+    onOpenAnalytics: analyticsHref ? () => router.push(analyticsHref) : undefined,
     onRename,
     handleHide,
     handleDelete,
@@ -265,8 +289,27 @@ export function SandboxCard({
               </div>
             </div>
 
-            {/* Actions: PR link (if exists) or Create PR button, then three dots */}
+            {/* Actions: Analytics (if in project), PR link or Create PR, then three dots */}
             <div className="flex items-center justify-end gap-1 mt-auto pt-1">
+              {analyticsHref && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9 text-muted-foreground hover:text-foreground hover:bg-primary/10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(analyticsHref);
+                      }}
+                      aria-label="Open Analytics"
+                    >
+                      <BarChart3 className="size-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Analytics</TooltipContent>
+                </Tooltip>
+              )}
               {prResult ? (
                 <Tooltip>
                   <TooltipTrigger asChild>

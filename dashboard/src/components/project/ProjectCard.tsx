@@ -49,7 +49,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ShareProjectDialog } from "@/components/ShareProjectDialog";
+import { ShareProjectDialog } from "./ShareProjectDialog";
 
 const TECH_ICONS: Record<string, { icon: React.ComponentType<{ className?: string }>; label: string }> = {
   vite: { icon: SiVite, label: "Vite" },

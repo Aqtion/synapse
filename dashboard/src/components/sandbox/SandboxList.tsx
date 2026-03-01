@@ -19,12 +19,14 @@ import { SandboxCard } from "./SandboxCard";
 import { SandboxEmptyState } from "./SandboxEmptyState";
 
 type SandboxListProps = {
+  userId?: string;
   projectId?: string;
   onOpenSandbox: (sandbox: SandboxEntry) => void;
   onInviteMoreTesters?: () => void;
 };
 
 export function SandboxList({
+  userId,
   projectId,
   onOpenSandbox,
   onInviteMoreTesters,
@@ -32,6 +34,10 @@ export function SandboxList({
   const sandboxes = useQuery(
     api.sandboxes.listSandboxes,
     projectId != null ? { projectId } : {},
+  );
+  const project = useQuery(
+    api.projects.getProject,
+    projectId != null ? { projectId } : "skip",
   );
   const updateLastOpened = useMutation(api.sandboxes.updateLastOpened);
   const removeSandbox = useMutation(api.sandboxes.removeSandbox);
@@ -85,11 +91,11 @@ export function SandboxList({
     return null;
   }
 
+  const title = project?.name ? `${project.name}'s sandboxes` : "Sandboxes";
+
   return (
     <div>
-      {/* <div className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-4">
-        Recent sandboxes
-      </div> */}
+      <h2 className="text-xl font-semibold text-foreground mb-4">{title}</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {sandboxes.map((sb) => (
           <SandboxCard
@@ -103,6 +109,7 @@ export function SandboxList({
               prNumber: sb.prNumber ?? undefined,
               githubRepo: sb.githubRepo ?? undefined,
             }}
+            analyticsHref={userId && projectId ? `/${userId}/${projectId}/${sb.id}/analytics` : undefined}
             onOpen={handleOpen}
             onRemove={handleRemove}
             onRename={handleRename}

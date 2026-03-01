@@ -49,5 +49,38 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_email", ["email"]),
+
+  sandboxAnalyticsSessions: defineTable({
+    sandboxId: v.string(),
+    startedAt: v.number(),
+    endedAt: v.number(),
+    sessionReplayVideoUrl: v.optional(v.string()),
+    supermemorySummary: v.optional(v.string()),
+  }).index("by_sandboxId", ["sandboxId"]),
+
+  sandboxEmotionSamples: defineTable({
+    sandboxId: v.string(),
+    sessionId: v.optional(v.string()),
+    timestampMs: v.number(),
+    lowEnergyUnpleasant: v.number(),
+    lowEnergyPleasant: v.number(),
+    highEnergyPleasant: v.number(),
+    highEnergyUnpleasant: v.number(),
+  }).index("by_sandboxId", ["sandboxId"]),
+
+  sandboxTranscriptEntries: defineTable({
+    sandboxId: v.string(),
+    sessionId: v.optional(v.string()),
+    timestampMs: v.number(),
+    text: v.string(),
+    isAiPrompt: v.boolean(),
+  }).index("by_sandboxId", ["sandboxId"]),
+
+  sandboxAnalyticsStats: defineTable({
+    sandboxId: v.string(),
+    aiPromptCount: v.number(),
+    linesChanged: v.number(),
+    lastUpdated: v.number(),
+  }).index("by_sandboxId", ["sandboxId"]),
 });
 

@@ -20,10 +20,15 @@ export function DashboardHeader() {
   const params = useParams();
   const user_id = params?.user_id as string | undefined;
   const project_id = params?.project_id as string | undefined;
+  const sandbox_id = params?.sandbox_id as string | undefined;
 
   const project = useQuery(
     api.projects.getProject,
     project_id ? { projectId: project_id } : "skip",
+  );
+  const sandbox = useQuery(
+    api.sandboxes.getSandboxForCurrentUser,
+    sandbox_id ? { sandboxId: sandbox_id } : "skip",
   );
 
   if (!user_id) return null;
@@ -31,9 +36,14 @@ export function DashboardHeader() {
   const isUserHome = pathname === `/${user_id}` || pathname === `/${user_id}/`;
   const isCreateProject = pathname?.endsWith("/create_project");
   const isUserProfile = pathname?.endsWith("/user");
-  const isProjectPage = project_id && !isCreateProject && !isUserProfile;
+  const isAnalyticsPage = Boolean(
+    project_id && sandbox_id && pathname?.endsWith("/analytics"),
+  );
+  const isProjectPage =
+    project_id && !isCreateProject && !isUserProfile && !isAnalyticsPage;
 
   const projectsHref = `/${user_id}`;
+  const projectHref = project_id ? `/${user_id}/${project_id}` : projectsHref;
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
@@ -54,7 +64,7 @@ export function DashboardHeader() {
                 </BreadcrumbLink>
               )}
             </BreadcrumbItem>
-            {(isProjectPage || isCreateProject || isUserProfile) && (
+            {(isProjectPage || isCreateProject || isUserProfile || isAnalyticsPage) && (
               <>
                 <BreadcrumbSeparator className="hidden md:block" />
                 <BreadcrumbItem>
@@ -72,7 +82,42 @@ export function DashboardHeader() {
                     ) : (
                       <BreadcrumbPage>Project</BreadcrumbPage>
                     ))}
+                  {isAnalyticsPage && (
+                    <>
+                      {project === undefined ? (
+                        <BreadcrumbPage>…</BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink asChild>
+                          <Link href={projectHref}>
+                            {project?.name ?? "Project"}
+                          </Link>
+                        </BreadcrumbLink>
+                      )}
+                    </>
+                  )}
                 </BreadcrumbItem>
+                {isAnalyticsPage && (
+                  <>
+                    <BreadcrumbSeparator className="hidden md:block" />
+                    <BreadcrumbItem>
+                      {sandbox === undefined ? (
+                        <BreadcrumbPage>…</BreadcrumbPage>
+                      ) : sandbox_id ? (
+                        <BreadcrumbLink asChild>
+                          <Link href={`/s/${sandbox_id}`}>
+                            {sandbox?.name ?? "Sandbox"}
+                          </Link>
+                        </BreadcrumbLink>
+                      ) : (
+                        <BreadcrumbPage>{sandbox?.name ?? "Sandbox"}</BreadcrumbPage>
+                      )}
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator className="hidden md:block" />
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>Analytics</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </>
+                )}
               </>
             )}
           </BreadcrumbList>

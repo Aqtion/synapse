@@ -12,14 +12,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 
 export type TesterRow = { name: string; email: string };
 
 type CreateSandboxDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreate: (testers: TesterRow[]) => void;
+  onCreate: (testers: TesterRow[]) => void | Promise<void>;
 };
 
 const defaultRow = (): TesterRow => ({ name: "", email: "" });
@@ -31,6 +31,7 @@ export function CreateSandboxDialog({
 }: CreateSandboxDialogProps) {
   const [testers, setTesters] = useState<TesterRow[]>([defaultRow()]);
   const [addCount, setAddCount] = useState(1);
+  const [isCreating, setIsCreating] = useState(false);
 
   function addRows() {
     const n = Math.max(1, Math.min(50, addCount));
@@ -47,14 +48,19 @@ export function CreateSandboxDialog({
     );
   }
 
-  function handleCreate() {
+  async function handleCreate() {
     const cleaned = testers
       .map((r) => ({ name: r.name.trim(), email: r.email.trim().toLowerCase() }))
       .filter((r) => r.email.length > 0);
     if (cleaned.length === 0) return;
-    onCreate(cleaned);
-    setTesters([defaultRow()]);
-    setAddCount(1);
+    setIsCreating(true);
+    try {
+      await Promise.resolve(onCreate(cleaned));
+      setTesters([defaultRow()]);
+      setAddCount(1);
+    } finally {
+      setIsCreating(false);
+    }
   }
 
   const canSubmit =
@@ -124,7 +130,16 @@ export function CreateSandboxDialog({
         </ScrollArea>
         <DialogFooter className="gap-2 sm:gap-0 mt-6">
           <Button className="mr-2" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleCreate} disabled={!canSubmit}>Invite</Button>
+          <Button onClick={handleCreate} disabled={!canSubmit || isCreating}>
+            {isCreating ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="size-4 animate-spin" aria-hidden />
+                Invite
+              </span>
+            ) : (
+              "Invite"
+            )}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useUserOptional } from "@/contexts/UserContext";
-import { LandingPage } from "@/components/LandingPage";
+import { LandingPage } from "@/components/landing/LandingPage";
 import { Loader2 } from "lucide-react";
 
 /**

@@ -6,7 +6,7 @@ import { api } from "convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import Link from "next/link";
-import { ProjectCard } from "@/components/ProjectCard";
+import { ProjectCard } from "@/components/project/ProjectCard";
 
 export default function UserProjectsPage() {
   const params = useParams();

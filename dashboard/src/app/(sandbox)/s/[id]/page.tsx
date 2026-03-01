@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAction, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
-import { SandboxVoice } from "@/components/SandboxVoice";
+import { SandboxVoice } from "@/components/sandbox/SandboxVoice";
 import { Loader2 } from "lucide-react";
 
 const WORKER_BASE_URL =
