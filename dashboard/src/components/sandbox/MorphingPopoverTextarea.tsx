@@ -3,7 +3,7 @@ import {
   MorphingPopover,
   MorphingPopoverTrigger,
   MorphingPopoverContent,
-} from '@/components/core/morphing-popover';
+} from '@/components/ui/morphing-popover';
 import { motion } from "framer-motion";
 import { useId, useState } from 'react';
 import { ArrowLeftIcon } from 'lucide-react';

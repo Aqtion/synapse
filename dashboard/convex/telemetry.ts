@@ -18,3 +18,21 @@ export const insertHumeSample = mutation({
     });
   },
 });
+
+export const insertMouseSample = mutation({
+  args: {
+    sandboxId: v.string(),
+    sessionId: v.string(),
+    timestampMs: v.number(),
+    payload: v.any(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.insert("telemetrySamples", {
+      sandboxId: args.sandboxId,
+      sessionId: args.sessionId,
+      timestampMs: args.timestampMs,
+      source: "mouse",
+      payload: args.payload,
+    });
+  },
+});

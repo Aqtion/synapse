@@ -9,16 +9,18 @@ import {
   SandboxHumeTelemetry,
   emotionToDotColor,
 } from "@/components/SandboxHumeTelemetry";
-import { useSandboxPostHogOnLoad, endPostHogSession } from "@/components/SandboxPostHogTelemetry";
+import { SandboxMouseTelemetry } from "@/components/SandboxMouseTelemetry";
+import { startMouseTracking, stopMouseTracking } from "@/lib/sandboxMouseTracking";
 import { Loader2 } from "lucide-react";
 import type { HumeEmotionMap } from "@/ux_telemetry";
 
 function useSandboxSessionId(): string {
   const ref = useRef<string | null>(null);
   if (ref.current === null) {
-    ref.current = typeof crypto !== "undefined" && crypto.randomUUID
-      ? crypto.randomUUID()
-      : `session-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    ref.current =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `session-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
   }
   return ref.current;
 }
@@ -33,7 +35,10 @@ export default function SandboxPage() {
   const id = params?.id as string | undefined;
   const sessionId = useSandboxSessionId();
   const workerBase = WORKER_BASE_URL ?? "";
-  const onSandboxFrameLoad = useSandboxPostHogOnLoad(id ?? "");
+
+  const onSandboxFrameLoad = useCallback(() => {
+    if (id && sessionId) startMouseTracking(id, sessionId);
+  }, [id, sessionId]);
 
   const sandbox = useQuery(
     api.sandboxes.getSandboxForCurrentUser,
@@ -59,24 +64,20 @@ export default function SandboxPage() {
         ? cachedSandboxRef.current.value
         : undefined;
 
-  // Stop PostHog recording when tab is hidden, tab is closed, or component unmounts.
+  // Stop mouse tracking when tab is hidden or component unmounts.
   useEffect(() => {
     if (typeof window === "undefined" || !id) return;
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "hidden") endPostHogSession("visibilitychange");
+    const onVisChange = () => {
+      if (document.visibilityState === "hidden") stopMouseTracking();
     };
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      endPostHogSession("unmount");
-    };
-  }, [id]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !id) return;
-    const onPageHide = () => endPostHogSession("pagehide");
+    const onPageHide = () => stopMouseTracking();
+    document.addEventListener("visibilitychange", onVisChange);
     window.addEventListener("pagehide", onPageHide);
-    return () => window.removeEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisChange);
+      window.removeEventListener("pagehide", onPageHide);
+      stopMouseTracking();
+    };
   }, [id]);
 
   useEffect(() => {
@@ -149,7 +150,7 @@ export default function SandboxPage() {
     );
   }
 
-  const iframeSrc = `${workerBase.replace(/\/$/, "")}/s/${id}/?_ph=1`;
+  const iframeSrc = `${workerBase.replace(/\/$/, "")}/s/${id}/`;
 
   return (
     <>
@@ -166,6 +167,7 @@ export default function SandboxPage() {
         sessionId={sessionId}
         onEmotionSample={handleEmotionSample}
       />
+      <SandboxMouseTelemetry sandboxId={id} sessionId={sessionId} />
     </>
   );
 }

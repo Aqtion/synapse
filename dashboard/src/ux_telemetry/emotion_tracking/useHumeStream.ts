@@ -82,7 +82,7 @@ export function useHumeStream(
   const rafRef = useRef<number | null>(null);
   const startInProgressRef = useRef(false);
   const closingIntentionallyRef = useRef(false);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectCountRef = useRef(0);
   const MAX_RECONNECT_ATTEMPTS = 5;
 

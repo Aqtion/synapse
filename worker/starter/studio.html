@@ -446,40 +446,153 @@
         sendPrompt();
         return;
       }
-      if (d.type === 'POSTHOG_INIT') {
-        window.__POSTHOG_PREVIEW_CONFIG__ = { apiKey: d.apiKey, apiHost: d.apiHost || 'https://us.i.posthog.com', sandboxId: d.sandboxId };
-        sendPostHogToPreview();
+      // ── Mouse tracking (UX telemetry): snapshots sent to dashboard for Convex ──
+      if (d.type === 'START_MOUSE_TRACKING' && d.sandboxId && d.sessionId) {
+        if (window.__mouseTrackingActive) return;
+        window.__mouseTrackingActive = true;
+        window.__mouseTrackingSessionId = d.sessionId;
+        window.__mouseTrackingSandboxId = d.sandboxId;
+        var mouseThrottleMs = 100;
+        var mouseLastRun = 0;
+        var mouseRaf = null;
+        var mouseLastCoords = { x: 0, y: 0 };
+        var mouseLastDoc = document;
+        var INTERACTIVE_SEL = "a[href], button, input:not([type='hidden']), select, textarea, [role='button'], [role='link'], [role='tab'], [role='menuitem'], [role='option'], [role='switch'], [role='checkbox'], [role='radio'], [role='searchbox'], [role='combobox'], [contenteditable='true'], [tabindex]:not([tabindex='-1'])";
+        function getStableId(el) {
+          if (el.id && String(el.id).trim()) return String(el.id).trim();
+          var tag = el.tagName ? el.tagName.toLowerCase() : '?';
+          var cls = (el.className && typeof el.className === 'string') ? el.className.trim().split(/\s+/).filter(Boolean).sort().join('.') : '';
+          var role = el.getAttribute('role') || '';
+          var aria = el.getAttribute('aria-label') || '';
+          var text = (el.textContent || '').trim().slice(0, 40).replace(/\s+/g, ' ');
+          var path = [];
+          var cur = el;
+          while (cur && cur !== document.body) {
+            var par = cur.parentElement;
+            if (!par) break;
+            var sibs = Array.prototype.slice.call(par.children);
+            var idx = sibs.indexOf(cur);
+            path.unshift(idx >= 0 ? idx : 0);
+            cur = par;
+          }
+          var pathStr = path.join('.');
+          var parts = [tag];
+          if (cls) parts.push('.' + cls);
+          if (role) parts.push('[role=' + role + ']');
+          if (aria) parts.push('[aria-label=' + aria.slice(0, 30) + ']');
+          if (text) parts.push('|' + text);
+          if (pathStr) parts.push('@' + pathStr);
+          var fp = parts.join('');
+          return fp.length > 120 ? fp.slice(0, 120) + '\u2026' : (fp || tag + '@' + pathStr);
+        }
+        function findInteractiveAt(el) {
+          if (!el) return null;
+          try { return el.closest(INTERACTIVE_SEL); } catch (e) { return null; }
+        }
+        function getIntentOffsets(radius) {
+          if (radius <= 0) return [{ dx: 0, dy: 0 }];
+          var out = [{ dx: 0, dy: 0 }];
+          for (var i = 0; i < 8; i++) {
+            var a = (i * Math.PI) / 4;
+            out.push({ dx: Math.round(radius * Math.cos(a)), dy: Math.round(radius * Math.sin(a)) });
+          }
+          return out;
+        }
+        function findIntentElement(doc, clientX, clientY, radius) {
+          radius = radius || 12;
+          var offsets = getIntentOffsets(radius);
+          var found = new Set();
+          for (var i = 0; i < offsets.length; i++) {
+            var o = offsets[i];
+            var el = doc.elementFromPoint(clientX + o.dx, clientY + o.dy);
+            var inter = findInteractiveAt(el);
+            if (inter) found.add(inter);
+          }
+          if (found.size === 0) return null;
+          if (found.size === 1) return found.values().next().value;
+          var best = null, bestD = Infinity;
+          found.forEach(function (el) {
+            var r = el.getBoundingClientRect();
+            var cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            var d = (clientX - cx) * (clientX - cx) + (clientY - cy) * (clientY - cy);
+            if (d < bestD) { bestD = d; best = el; }
+          });
+          return best;
+        }
+        function captureSnapshot(el, maxLen) {
+          maxLen = maxLen || 500;
+          if (!el || typeof el.outerHTML !== 'string') return null;
+          var tagName = el.tagName || '';
+          var outerHTML = el.outerHTML.length > maxLen ? el.outerHTML.slice(0, maxLen) + '...' : el.outerHTML;
+          var id = el.id || null;
+          var stableId = getStableId(el);
+          return { tagName: tagName, outerHTML: outerHTML, id: id || undefined, stableId: stableId };
+        }
+        function sendSnapshot(clientX, clientY, doc) {
+          if (!doc) return;
+          var el = doc.elementFromPoint(clientX, clientY);
+          var interactive = findIntentElement(doc, clientX, clientY, 12);
+          var elementUnderCursor = captureSnapshot(el, 500);
+          var interactiveElement = captureSnapshot(interactive, 500);
+          var payload = {
+            position: { x: clientX, y: clientY },
+            elementUnderCursor: elementUnderCursor,
+            interactiveElement: interactiveElement
+          };
+          try {
+            window.parent.postMessage({ type: 'MOUSE_SNAPSHOT', timestampMs: Date.now(), payload: payload }, '*');
+          } catch (e) { }
+        }
+        function throttledSnapshot(clientX, clientY, doc) {
+          var now = Date.now();
+          if (now - mouseLastRun >= mouseThrottleMs) {
+            mouseLastRun = now;
+            sendSnapshot(clientX, clientY, doc);
+            return;
+          }
+          mouseLastCoords = { x: clientX, y: clientY };
+          mouseLastDoc = doc;
+          if (mouseRaf == null) {
+            mouseRaf = requestAnimationFrame(function () {
+              mouseRaf = null;
+              mouseLastRun = Date.now();
+              sendSnapshot(mouseLastCoords.x, mouseLastCoords.y, mouseLastDoc);
+            });
+          }
+        }
+        function onPreviewMouseMove(e) {
+          if (!window.__mouseTrackingActive) return;
+          throttledSnapshot(e.clientX, e.clientY, e.target.ownerDocument || document);
+        }
+        function attachPreviewListeners() {
+          try {
+            var pd = els.previewFrame && els.previewFrame.contentDocument;
+            if (pd) pd.addEventListener('mousemove', onPreviewMouseMove, { passive: true });
+          } catch (e) { }
+        }
+        attachPreviewListeners();
+        els.previewFrame.addEventListener('load', attachPreviewListeners);
+        window.__mouseTrackingCleanup = function () {
+          window.__mouseTrackingActive = false;
+          try {
+            var pd = els.previewFrame && els.previewFrame.contentDocument;
+            if (pd) pd.removeEventListener('mousemove', onPreviewMouseMove);
+          } catch (e) { }
+          els.previewFrame.removeEventListener('load', attachPreviewListeners);
+          if (mouseRaf != null) { cancelAnimationFrame(mouseRaf); mouseRaf = null; }
+          window.__mouseTrackingCleanup = null;
+        };
         return;
       }
-      if (d.type === 'POSTHOG_STOP') {
-        try {
-          if (els.previewFrame && els.previewFrame.contentWindow) {
-            els.previewFrame.contentWindow.postMessage({ type: 'POSTHOG_STOP' }, '*');
-          }
-        } catch (e) { }
+      if (d.type === 'STOP_MOUSE_TRACKING') {
+        if (typeof window.__mouseTrackingCleanup === 'function') {
+          window.__mouseTrackingCleanup();
+        }
         return;
       }
     });
 
-    function sendPostHogToPreview() {
-      try {
-        var c = window.__POSTHOG_PREVIEW_CONFIG__;
-        if (c && els.previewFrame && els.previewFrame.contentWindow) {
-          els.previewFrame.contentWindow.postMessage({
-            type: 'POSTHOG_INIT',
-            apiKey: c.apiKey,
-            apiHost: c.apiHost,
-            sandboxId: c.sandboxId,
-            isPreview: true
-          }, '*');
-        }
-      } catch (e) { }
-    }
-    els.previewFrame.addEventListener('load', sendPostHogToPreview);
-
     initSandbox();
-
-    // Session recording happens inside the preview iframe — see worker/src/index.ts.
   </script>
 </body>
 
