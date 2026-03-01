@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "convex/_generated/api";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useHumeStream, getTimestampMsFromHumePayload } from "@/ux_telemetry";
 import type { HumeEmotionMap, HumeStreamMessage } from "@/ux_telemetry";
 import { cn } from "@/lib/utils";

@@ -16,6 +16,23 @@ function getFacePayload(msg: HumeStreamMessage): HumeStreamMessage["face"] {
   return msg.face ?? (msg as { models_success?: { face?: HumeStreamMessage["face"] } }).models_success?.face;
 }
 
+/**
+ * Extract timestamp in ms from a Hume stream payload for storage/analytics.
+ * Uses payload time field when present, otherwise returns Date.now().
+ */
+export function getTimestampMsFromHumePayload(msg: HumeStreamMessage): number {
+  const raw = msg as Record<string, unknown>;
+  if (raw?.time != null) {
+    const t = Number(raw.time);
+    if (Number.isFinite(t)) return t < 1e12 ? t * 1000 : t;
+  }
+  if (raw?.timestamp_ms != null) {
+    const t = Number((raw as { timestamp_ms: unknown }).timestamp_ms);
+    if (Number.isFinite(t)) return t;
+  }
+  return Date.now();
+}
+
 function emotionsFromMessage(msg: HumeStreamMessage): HumeEmotionMap {
   const face = getFacePayload(msg);
   const predictions = face?.predictions;

@@ -15,7 +15,7 @@ import {
   motion,
   Transition,
   Variants,
-} from 'motion/react';
+} from "framer-motion";
 import useClickOutside from '@/hooks/useClickOutside';
 import { cn } from '@/lib/utils';
 
