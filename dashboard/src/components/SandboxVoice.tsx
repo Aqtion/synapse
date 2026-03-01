@@ -349,7 +349,7 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
             {sttError ? (
               <p className="text-destructive">{sttError}</p>
             ) : (
-              <p className="whitespace-pre-wrap break-words">{popupContent || "Listening…"}</p>
+              <p className="whitespace-pre-wrap wrap-break-word">{popupContent || "Listening…"}</p>
             )}
           </div>
         </div>
