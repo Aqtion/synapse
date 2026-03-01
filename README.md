@@ -1,7 +1,4 @@
 # Synapse
-
-An AI-powered sandbox platform. Admins invite testers to isolated browser sandboxes where an AI agent edits a live web app in real time based on voice or text prompts. Changes are remembered across sessions, and every sandbox can generate a GitHub PR with a full change history.
-
 ---
 
 ## What's in this repo
