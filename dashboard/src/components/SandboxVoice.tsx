@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Smile, Pencil, ArrowLeft, Send } from "lucide-react";
 import { refinePrompt, runPrompt } from "@/lib/workerClient";
@@ -415,9 +415,15 @@ export function SandboxVoice({
   // ── audio lines animation ──
 
   useEffect(() => {
+    if (mode === "text") return;
     if (isSpeaking) audioLinesRef.current?.startAnimation();
     else audioLinesRef.current?.stopAnimation();
   }, [isSpeaking, mode]);
+
+  // Reset audio lines to normal when returning from text mode (icon remounts and can be glitched)
+  useLayoutEffect(() => {
+    if (mode === "idle") audioLinesRef.current?.stopAnimation();
+  }, [mode]);
 
   // ── mode transitions ──
 
@@ -548,7 +554,7 @@ export function SandboxVoice({
         : "ring-yellow-500/40";
 
   const toolbarWidth =
-    mode === "text" ? 400 : mode === "transcribing" ? 260 : 200;
+    mode === "text" ? 450 : mode === "transcribing" ? 300 : 160;
 
   return (
     <>
@@ -661,6 +667,7 @@ export function SandboxVoice({
 
               {/* audio lines */}
               <AudioLinesIcon
+                key="audio-lines-idle"
                 ref={audioLinesRef}
                 size={24}
                 className="text-white/60"
@@ -698,6 +705,10 @@ export function SandboxVoice({
                     e.preventDefault();
                     submitText();
                   }
+                  if (e.key === "Backspace" && !textInput) {
+                    e.preventDefault();
+                    exitTextMode();
+                  }
                 }}
                 placeholder="Type your prompt…"
                 rows={1}
@@ -727,6 +738,7 @@ export function SandboxVoice({
 
               {/* expanded audio lines */}
               <AudioLinesIcon
+                key="audio-lines-transcribing"
                 ref={audioLinesRef}
                 size={32}
                 className="text-white/80"

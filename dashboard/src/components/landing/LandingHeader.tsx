@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { SignInDialog } from "@/components/SignInDialog";
@@ -26,7 +27,12 @@ function SynapseLogo({ className }: { className?: string }) {
  * Per plan: "Remove or repurpose Header for landing page only (e.g. minimal header on `/` with logo + Sign in)."
  */
 export function LandingHeader() {
+  const pathname = usePathname();
   const [signInOpen, setSignInOpen] = useState(false);
+
+  if (pathname !== "/") {
+    return null;
+  }
 
   return (
     <header className="sticky top-5 z-40 w-full max-w-6xl mx-auto bg-background/15 backdrop-blur supports-backdrop-filter:bg-background/80">

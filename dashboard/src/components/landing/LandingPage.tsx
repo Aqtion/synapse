@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { SignInDialog } from "@/components/SignInDialog";
 
@@ -27,7 +28,12 @@ function DecorativeLogo({
 }
 
 export function LandingPage() {
+  const pathname = usePathname();
   const [signInOpen, setSignInOpen] = useState(false);
+
+  if (pathname !== "/") {
+    return null;
+  }
 
   return (
     <div className="min-h-screen overflow-hidden relative flex flex-col items-center justify-center px-4 py-16 bg-linear-to-b from-background to-muted/30">

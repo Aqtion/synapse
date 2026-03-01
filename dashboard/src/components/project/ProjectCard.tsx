@@ -200,25 +200,30 @@ export function ProjectCard({ project, userId }: ProjectCardProps) {
     { label: "Type", value: project.projectType ?? "—" },
   ];
 
+  const projectHref = `/${userId}/${project.id}`;
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div className="group relative rounded-lg border bg-card p-4 hover:border-primary/50 hover:shadow transition-colors flex flex-col min-h-[88px]">
+        <Link
+          href={projectHref}
+          className="group relative rounded-lg border bg-card p-4 hover:border-primary/50 hover:shadow transition-colors flex flex-col min-h-[88px]"
+        >
           {/* Top row: title (left), three dots (right) */}
           <div className="flex items-start justify-between gap-3 min-w-0">
-            <Link
-              href={`/${userId}/${project.id}`}
-              className="flex-1 min-w-0 block pr-9"
-            >
-              <h2 className="font-semibold truncate">{project.name}</h2>
-            </Link>
+            <h2 className="flex-1 min-w-0 font-semibold truncate pr-9">
+              {project.name}
+            </h2>
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-muted-foreground hover:text-foreground shrink-0"
-                  onClick={(e) => e.preventDefault()}
+                  className="size-8 text-muted-foreground hover:text-foreground shrink-0 absolute top-3 right-3"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
                   aria-label="Project options"
                 >
                   <MoreVertical className="size-4" />
@@ -262,10 +267,7 @@ export function ProjectCard({ project, userId }: ProjectCardProps) {
           </div>
           {/* Bottom row: git icon + repo (left), tech (right), same baseline */}
           <div className="flex items-center justify-between gap-3 min-w-0 mt-2">
-            <Link
-              href={`/${userId}/${project.id}`}
-              className="flex-1 min-w-0 flex items-center gap-1.5 text-sm text-muted-foreground truncate"
-            >
+            <span className="flex-1 min-w-0 flex items-center gap-1.5 text-sm text-muted-foreground truncate">
               {project.githubRepo ? (
                 <>
                   <Github className="size-3.5 shrink-0" />
@@ -274,12 +276,12 @@ export function ProjectCard({ project, userId }: ProjectCardProps) {
               ) : (
                 <span className="min-h-[0.875rem]" aria-hidden />
               )}
-            </Link>
+            </span>
             <div className="shrink-0 self-end">
               {getTechDisplay(project.projectType)}
             </div>
           </div>
-        </div>
+        </Link>
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48" onClick={(e) => e.stopPropagation()}>
         <ContextMenuItem onSelect={openShare}>

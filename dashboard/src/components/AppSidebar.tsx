@@ -367,14 +367,14 @@ export function AppSidebar({ userId }: AppSidebarProps) {
                   ))}
                 </SidebarMenuSub>
               </SidebarMenuItem>
-              <SidebarMenuItem>
+              {/* <SidebarMenuItem>
                 <SidebarMenuButton asChild>
                   <Link href="/ux_telemetry">
                     <BarChart className="size-4" />
                     <span>UX Telemetry</span>
                   </Link>
                 </SidebarMenuButton>
-              </SidebarMenuItem>
+              </SidebarMenuItem> */}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

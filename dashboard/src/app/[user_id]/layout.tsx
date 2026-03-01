@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "convex/_generated/api";
@@ -9,6 +9,8 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardHeader } from "@/components/DashboardHeader";
 import { useUser } from "@/contexts/UserContext";
+
+const REDIRECT_TO_ROOT_DELAY_MS = 400;
 
 export default function UserLayout({
   children,
@@ -20,6 +22,7 @@ export default function UserLayout({
   const user_id = params?.user_id as string | undefined;
   const { user, isLoading } = useUser();
   const upsertUserEmail = useMutation(api.userEmails.upsertUserEmail);
+  const redirectToRootTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (user?.subject && user?.email) {
@@ -28,10 +31,28 @@ export default function UserLayout({
   }, [user?.subject, user?.email, upsertUserEmail]);
 
   useEffect(() => {
-    if (isLoading || !user_id) return;
-    if (user === null) {
-      router.replace("/");
+    if (isLoading || !user_id) {
+      if (redirectToRootTimeoutRef.current != null) {
+        clearTimeout(redirectToRootTimeoutRef.current);
+        redirectToRootTimeoutRef.current = null;
+      }
       return;
+    }
+    if (user === null) {
+      redirectToRootTimeoutRef.current = setTimeout(() => {
+        redirectToRootTimeoutRef.current = null;
+        router.replace("/");
+      }, REDIRECT_TO_ROOT_DELAY_MS);
+      return () => {
+        if (redirectToRootTimeoutRef.current != null) {
+          clearTimeout(redirectToRootTimeoutRef.current);
+          redirectToRootTimeoutRef.current = null;
+        }
+      };
+    }
+    if (redirectToRootTimeoutRef.current != null) {
+      clearTimeout(redirectToRootTimeoutRef.current);
+      redirectToRootTimeoutRef.current = null;
     }
     if (user.subject && user_id !== user.subject) {
       router.replace(`/${user.subject}`);
