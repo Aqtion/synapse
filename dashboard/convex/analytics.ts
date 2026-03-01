@@ -90,6 +90,64 @@ export const getStatsForSandbox = query({
 });
 
 /**
+ * Insert a single transcript entry (e.g. from ElevenLabs STT). Requires sandbox access.
+ */
+export const insertTranscriptEntry = mutation({
+  args: {
+    sandboxId: v.string(),
+    timestampMs: v.number(),
+    text: v.string(),
+    sessionId: v.optional(v.string()),
+    isAiPrompt: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const canAccess = await userCanAccessSandboxMutation(ctx, args.sandboxId);
+    if (!canAccess) throw new Error("You do not have access to this sandbox");
+    await ctx.db.insert("sandboxTranscriptEntries", {
+      sandboxId: args.sandboxId,
+      sessionId: args.sessionId,
+      timestampMs: args.timestampMs,
+      text: args.text,
+      isAiPrompt: args.isAiPrompt ?? false,
+    });
+  },
+});
+
+/**
+ * Start a voice/transcript session for a sandbox. Call when the user first produces
+ * a committed transcript in a visit. Returns the session id to pass to insertTranscriptEntry.
+ */
+export const startVoiceSession = mutation({
+  args: { sandboxId: v.string() },
+  handler: async (ctx, args) => {
+    const canAccess = await userCanAccessSandboxMutation(ctx, args.sandboxId);
+    if (!canAccess) throw new Error("You do not have access to this sandbox");
+    const now = Date.now();
+    const sessionId = await ctx.db.insert("sandboxAnalyticsSessions", {
+      sandboxId: args.sandboxId,
+      startedAt: now,
+      endedAt: now,
+    });
+    return sessionId;
+  },
+});
+
+/**
+ * End a voice session (set endedAt to now). Call when the user leaves the sandbox
+ * or stops the voice session so the analytics timeline has a correct duration.
+ */
+export const endVoiceSession = mutation({
+  args: { sessionId: v.id("sandboxAnalyticsSessions") },
+  handler: async (ctx, args) => {
+    const session = await ctx.db.get(args.sessionId);
+    if (!session) return;
+    const canAccess = await userCanAccessSandboxMutation(ctx, session.sandboxId);
+    if (!canAccess) throw new Error("You do not have access to this session");
+    await ctx.db.patch(args.sessionId, { endedAt: Date.now() });
+  },
+});
+
+/**
  * Seeds analytics data for a sandbox (1fps emotion samples, transcript, session, stats).
  * Call from dashboard or Convex dashboard for a given sandboxId.
  */

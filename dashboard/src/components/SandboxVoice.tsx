@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation } from "convex/react";
+import { api } from "convex/_generated/api";
+import type { Id } from "convex/_generated/dataModel";
 
 const WS_PATH = "/ws/stt";
 const TARGET_SAMPLE_RATE = 16000;
@@ -65,6 +68,10 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const [isListening, setIsListening] = useState(false);
 
+  const insertTranscriptEntry = useMutation(api.analytics.insertTranscriptEntry);
+  const startVoiceSession = useMutation(api.analytics.startVoiceSession);
+  const endVoiceSession = useMutation(api.analytics.endVoiceSession);
+
   const wsRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -73,6 +80,19 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
   const segmentLinesRef = useRef<string[]>([]);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountRef = useRef(true);
+  const voiceSessionIdRef = useRef<Id<"sandboxAnalyticsSessions"> | null>(null);
+  const voiceSessionPromiseRef = useRef<Promise<Id<"sandboxAnalyticsSessions">> | null>(null);
+
+  const getOrCreateVoiceSessionId = useCallback((): Promise<Id<"sandboxAnalyticsSessions">> => {
+    if (voiceSessionIdRef.current != null) return Promise.resolve(voiceSessionIdRef.current);
+    if (voiceSessionPromiseRef.current != null) return voiceSessionPromiseRef.current;
+    voiceSessionPromiseRef.current = startVoiceSession({ sandboxId }).then((id) => {
+      voiceSessionIdRef.current = id;
+      voiceSessionPromiseRef.current = null;
+      return id;
+    });
+    return voiceSessionPromiseRef.current;
+  }, [sandboxId, startVoiceSession]);
 
   const getIframe = useCallback(() => {
     return document.getElementById("sandboxFrame") as HTMLIFrameElement | null;
@@ -102,12 +122,17 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
     mountRef.current = true;
     return () => {
       mountRef.current = false;
+      const sessionId = voiceSessionIdRef.current;
+      if (sessionId) {
+        voiceSessionIdRef.current = null;
+        endVoiceSession({ sessionId }).catch(() => {});
+      }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
     };
-  }, []);
+  }, [endVoiceSession]);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,6 +158,18 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
             appendTranscript(msg.text, true);
           } else if (msg.type === "committed_transcript" && msg.text != null) {
             appendTranscript(msg.text, false);
+            const toSave = filterGarbageAndEmpty(msg.text);
+            if (toSave != null) {
+              getOrCreateVoiceSessionId().then((sessionId) => {
+                insertTranscriptEntry({
+                  sandboxId,
+                  timestampMs: Date.now(),
+                  text: toSave,
+                  sessionId,
+                  isAiPrompt: false,
+                }).catch(() => {});
+              }).catch(() => {});
+            }
           } else if (msg.type === "error") {
             setSttError(msg.message || "STT error");
           } else if (msg.type === "upstream_closed") {
@@ -172,7 +209,7 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
       if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.close();
       wsRef.current = null;
     };
-  }, [appendTranscript]);
+  }, [appendTranscript, getOrCreateVoiceSessionId, insertTranscriptEntry, sandboxId]);
 
   useEffect(() => {
     if (!isListening || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
