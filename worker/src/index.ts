@@ -90,13 +90,14 @@ const SANDBOX_ID_RE = /^\/s\/([a-z0-9][a-z0-9-]{0,28}[a-z0-9]?)\//;
 const SUPERMEMORY_API = 'https://api.supermemory.ai/v3';
 const GEMINI_API = 'https://generativelanguage.googleapis.com/v1beta';
 
-const GEMINI_REFINE_SYSTEM_PROMPT = `You are a prompt refiner for a code-generation AI. You receive raw user input from voice (TTS) or chat.
+const GEMINI_REFINE_SYSTEM_PROMPT = `You are a prompt refiner for a code-generation AI. You receive raw user input from speech-to-text (or chat).
 
 Your job: turn it into a single, clear, actionable instruction for a frontend web developer AI. Rules:
-- Remove filler words, hesitations, repetition, and off-topic phrases (e.g. "um", "like", "you know", "so basically").
-- Keep the request concise. One or two short sentences is enough.
-- Preserve the user's intent exactly. Do not add or remove features they asked for.
-- Output ONLY the refined instruction, no preamble, no quotes, no "The user wants..." — just the instruction.`;
+- Treat input as speech-to-text: fix stuttering, repetition, filler words ("um", "uh", "like", "you know", "so basically"), and obvious ASR errors. Remove any garbage or non-actionable content.
+- Output one or two short, concrete actionable items. Be specific (e.g. "Add a blue button" not "maybe add something").
+- Preserve the user's intent exactly. Do not add features they did not ask for.
+- If the input is empty, unintelligible, or not a request to change the app, output nothing or a single short rejection (e.g. "No clear request.").
+- Output ONLY the refined instruction(s). No preamble, no quotes, no "The user wants..." — just the instruction.`;
 
 async function refinePromptWithGemini(apiKey: string, userPrompt: string): Promise<string> {
   const trimmed = userPrompt.trim();
@@ -354,6 +355,25 @@ export default {
             : geminiKey
               ? await refinePromptWithGemini(geminiKey, prompt)
               : prompt;
+
+        const noActionPhrases = [
+          'no clear request',
+          'no actionable request',
+          'unintelligible',
+          'nothing to do',
+          'no change needed',
+        ];
+        const lower = promptToUse.toLowerCase().trim();
+        const isRejection =
+          !promptToUse ||
+          promptToUse.length < 2 ||
+          noActionPhrases.some((p) => lower === p || lower.startsWith(p + '.') || lower.startsWith(p + ','));
+        if (isRejection) {
+          const sandbox = getSandbox(env.Sandbox, sandboxId);
+          const listing = await sandbox.listFiles(APP_DIR, { recursive: true });
+          const files = listing.files.filter((f) => f.type === 'file').map((f) => f.relativePath);
+          return json({ success: true, written: [], deleted: [], files, refinedPrompt: promptToUse || '' });
+        }
 
         const sandbox = getSandbox(env.Sandbox, sandboxId);
 

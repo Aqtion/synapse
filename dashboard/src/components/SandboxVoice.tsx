@@ -5,6 +5,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const WS_PATH = "/ws/stt";
 const TARGET_SAMPLE_RATE = 16000;
 
+/** Minimum character length for a segment to be sent (avoids empty/filler). */
+const MIN_SEGMENT_LENGTH = 2;
+/** Patterns that are considered garbage and should not be sent. */
+const GARBAGE_REGEX = /^(?:um+|uh+|hm+|ah+|oh+|like|yeah|nope|okay|ok\s*)$|^[\s.,?!\-–—;:'"]+$/i;
+
+function normalizeSegment(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+/** Returns the segment to send, or null if it's empty/garbage and should not be sent downstream. */
+function filterGarbageAndEmpty(raw: string): string | null {
+  const s = normalizeSegment(raw);
+  if (s.length < MIN_SEGMENT_LENGTH) return null;
+  if (GARBAGE_REGEX.test(s)) return null;
+  return s;
+}
+
 function getWsUrl(): string {
   if (typeof window === "undefined") return "";
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -52,6 +69,8 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const isMicDownRef = useRef(false);
   const currentPartialRef = useRef("");
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountRef = useRef(true);
 
   const getIframe = useCallback(() => {
     return document.getElementById("sandboxFrame") as HTMLIFrameElement | null;
@@ -78,49 +97,77 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
   }, []);
 
   useEffect(() => {
+    mountRef.current = true;
+    return () => {
+      mountRef.current = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     const url = getWsUrl();
     if (!url) return;
 
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-    setSttError(null);
+    function connect() {
+      if (!mountRef.current || wsRef.current?.readyState === WebSocket.OPEN) return;
+      const ws = new WebSocket(url);
+      wsRef.current = ws;
+      setSttError(null);
 
-    ws.onopen = () => {
-      if (cancelled) return;
-      setIsListening(true);
-    };
+      ws.onopen = () => {
+        if (cancelled || !mountRef.current) return;
+        setIsListening(true);
+      };
 
-    ws.onmessage = (event) => {
-      if (cancelled) return;
-      try {
-        const msg = JSON.parse(event.data as string);
-        if (msg.type === "partial_transcript" && msg.text != null) {
-          appendTranscript(msg.text, true);
-        } else if (msg.type === "committed_transcript" && msg.text != null) {
-          appendTranscript(msg.text, false);
-        } else if (msg.type === "error") {
-          setSttError(msg.message || "STT error");
-        } else if (msg.type === "upstream_closed") {
-          setSttError(msg.reason || "STT connection closed");
+      ws.onmessage = (event) => {
+        if (cancelled) return;
+        try {
+          const msg = JSON.parse(event.data as string);
+          if (msg.type === "partial_transcript" && msg.text != null) {
+            appendTranscript(msg.text, true);
+          } else if (msg.type === "committed_transcript" && msg.text != null) {
+            appendTranscript(msg.text, false);
+          } else if (msg.type === "error") {
+            setSttError(msg.message || "STT error");
+          } else if (msg.type === "upstream_closed") {
+            const reason = String(msg.reason ?? "");
+            const isNormalClose = /\(1000\)|normal/i.test(reason);
+            if (!isNormalClose) setSttError(reason || "STT connection closed");
+            else setSttError(null);
+          }
+        } catch (_) {
+          // ignore
         }
-      } catch (_) {
-        // ignore
-      }
-    };
+      };
 
-    ws.onclose = () => {
-      if (!cancelled) setIsListening(false);
-      wsRef.current = null;
-    };
+      ws.onclose = () => {
+        if (!cancelled) setIsListening(false);
+        wsRef.current = null;
+        if (cancelled || !mountRef.current) return;
+        reconnectTimeoutRef.current = setTimeout(() => {
+          reconnectTimeoutRef.current = null;
+          connect();
+        }, 2000);
+      };
 
-    ws.onerror = () => {
-      if (!cancelled) setSttError("WebSocket error");
-    };
+      ws.onerror = () => {
+        if (!cancelled) setSttError("WebSocket error");
+      };
+    }
+
+    connect();
 
     return () => {
       cancelled = true;
-      if (ws.readyState === WebSocket.OPEN) ws.close();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.close();
       wsRef.current = null;
     };
   }, [appendTranscript]);
@@ -216,6 +263,7 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
 
   const handleMicDown = useCallback(() => {
     isMicDownRef.current = true;
+    currentPartialRef.current = "";
     setSegmentLines([]);
     setIsMicDown(true);
   }, []);
@@ -226,14 +274,16 @@ export function SandboxVoice({ sandboxId, workerBaseUrl }: SandboxVoiceProps) {
     setIsMicDown(false);
     const segmentText = [...segmentLines];
     if (currentPartialRef.current.trim()) segmentText.push(currentPartialRef.current);
-    const text = segmentText.join(" ").trim();
-    if (!text) return;
+    const raw = segmentText.join(" ").trim();
+    const text = filterGarbageAndEmpty(raw);
+    setSegmentLines([]);
+    currentPartialRef.current = "";
+    if (text == null || !text) return;
 
     const iframe = getIframe();
     if (iframe?.contentWindow) {
       iframe.contentWindow.postMessage({ type: "VOICE_PROMPT", text }, "*");
     }
-    setSegmentLines([]);
   }, [isMicDown, segmentLines, getIframe]);
 
   const displayLines = transcriptLines;
