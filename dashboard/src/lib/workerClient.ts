@@ -102,7 +102,10 @@ export async function runPrompt(params: {
   });
 }
 
-export type RefineResponse = { refinedPrompt: string };
+export type RefineResponse = {
+  refinedPrompt: string;
+  refinementSkippedReason?: string;
+};
 
 export async function refinePrompt(params: {
   sandboxId: string;
@@ -114,6 +117,9 @@ export async function refinePrompt(params: {
     body: JSON.stringify({ prompt: params.prompt }),
   });
   console.log("[refine] refinedPrompt received from worker:", result.refinedPrompt);
+  if (result.refinementSkippedReason) {
+    console.warn("[refine] skip reason:", result.refinementSkippedReason);
+  }
   return result;
 }
 

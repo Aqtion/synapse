@@ -351,8 +351,14 @@ export default {
       const raw = typeof body.prompt === 'string' ? body.prompt.trim() : '';
       if (raw) console.log('[refine] received:', raw.slice(0, 80) + (raw.length > 80 ? '...' : ''));
       const geminiKey = (env as unknown as Record<string, unknown>).GEMINI_API_KEY as string | undefined;
-      if (!geminiKey) {
-        return json({ refinedPrompt: raw || '', refinementSkipped: true });
+      const hasKey = Boolean(geminiKey && String(geminiKey).trim().length > 0);
+      console.log('[refine] GEMINI_API_KEY present in worker env:', hasKey);
+      if (!hasKey) {
+        return json({
+          refinedPrompt: raw || '',
+          refinementSkipped: true,
+          refinementSkippedReason: 'GEMINI_API_KEY not set in this worker (local: add to worker/.dev.vars and restart; production: wrangler secret put GEMINI_API_KEY)',
+        });
       }
       try {
         const refined = await refinePromptWithGemini(geminiKey, raw);
