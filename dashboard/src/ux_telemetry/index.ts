@@ -9,7 +9,7 @@
  * - behavioral_tracking: PostHog analytics + session replay (initPostHog)
  */
 
-export { useHumeStream } from "./emotion_tracking";
+export { useHumeStream, getTimestampMsFromHumePayload } from "./emotion_tracking";
 export {
   HUME_FRAME_INTERVAL_MS,
   HUME_MAX_FPS,

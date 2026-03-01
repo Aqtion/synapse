@@ -16,6 +16,7 @@ import type * as modal from "../modal.js";
 import type * as projects from "../projects.js";
 import type * as runs from "../runs.js";
 import type * as sandboxes from "../sandboxes.js";
+import type * as telemetry from "../telemetry.js";
 import type * as userEmails from "../userEmails.js";
 
 import type {
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   projects: typeof projects;
   runs: typeof runs;
   sandboxes: typeof sandboxes;
+  telemetry: typeof telemetry;
   userEmails: typeof userEmails;
 }>;
 

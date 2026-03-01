@@ -9,6 +9,16 @@ import { SandboxHumeTelemetry } from "@/components/SandboxHumeTelemetry";
 import { useSandboxPostHogOnLoad } from "@/components/SandboxPostHogTelemetry";
 import { Loader2 } from "lucide-react";
 
+function useSandboxSessionId(): string {
+  const ref = useRef<string | null>(null);
+  if (ref.current === null) {
+    ref.current = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `session-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  }
+  return ref.current;
+}
+
 const WORKER_BASE_URL =
   typeof window !== "undefined"
     ? process.env.NEXT_PUBLIC_WORKER_BASE_URL
@@ -27,6 +37,7 @@ function sendPostHogStop() {
 export default function SandboxPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
+  const sessionId = useSandboxSessionId();
   const workerBase = WORKER_BASE_URL ?? "";
   const onSandboxFrameLoad = useSandboxPostHogOnLoad(id ?? "");
 
@@ -153,7 +164,7 @@ export default function SandboxPage() {
         onLoad={onSandboxFrameLoad}
       />
       <SandboxVoice sandboxId={id} />
-      <SandboxHumeTelemetry sandboxId={id} />
+      <SandboxHumeTelemetry sandboxId={id} sessionId={sessionId} />
     </>
   );
 }

@@ -82,5 +82,23 @@ export default defineSchema({
     linesChanged: v.number(),
     lastUpdated: v.number(),
   }).index("by_sandboxId", ["sandboxId"]),
+
+  // Raw telemetry from sandbox sessions (Hume emotion, future: voice, PostHog, etc.).
+  // Join streams by sandboxId + sessionId + timestampMs.
+  telemetrySamples: defineTable({
+    sandboxId: v.string(),
+    sessionId: v.string(),
+    timestampMs: v.number(),
+    source: v.string(),
+    payload: v.any(),
+  })
+    .index("by_sandboxId", ["sandboxId"])
+    .index("by_sessionId", ["sessionId"])
+    .index("by_sandboxId_sessionId_timestampMs", [
+      "sandboxId",
+      "sessionId",
+      "timestampMs",
+    ])
+    .index("by_sandboxId_timestampMs", ["sandboxId", "timestampMs"]),
 });
 
