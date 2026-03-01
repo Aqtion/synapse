@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAction, useQuery } from "convex/react";
 import { api } from "convex/_generated/api";
-import { SandboxVoice } from "@/components/sandbox/SandboxVoice";
+import { SandboxVoice } from "@/components/SandboxVoice";
+import { SandboxHumeTelemetry } from "@/components/SandboxHumeTelemetry";
+import { useSandboxPostHogOnLoad } from "@/components/SandboxPostHogTelemetry";
 import { Loader2 } from "lucide-react";
 
 const WORKER_BASE_URL =
@@ -26,6 +28,7 @@ export default function SandboxPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
   const workerBase = WORKER_BASE_URL ?? "";
+  const onSandboxFrameLoad = useSandboxPostHogOnLoad(id ?? "");
 
   const sandbox = useQuery(
     api.sandboxes.getSandboxForCurrentUser,
@@ -46,6 +49,27 @@ export default function SandboxPage() {
       : id && cachedSandboxRef.current?.id === id
         ? cachedSandboxRef.current.value
         : undefined;
+
+  // Stop PostHog recording when tab is hidden (switch tab) or when component unmounts (navigate away).
+  useEffect(() => {
+    if (typeof window === "undefined" || !id) return;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") sendPostHogStop();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      sendPostHogStop();
+    };
+  }, [id]);
+
+  // When user closes the tab, send STOP so the iframe can end the session before the tab is destroyed.
+  useEffect(() => {
+    if (typeof window === "undefined" || !id) return;
+    const onPageHide = () => sendPostHogStop();
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [id]);
 
   useEffect(() => {
     if (!id || !sandbox || workerReady || workerError) return;
@@ -117,7 +141,7 @@ export default function SandboxPage() {
     );
   }
 
-  const iframeSrc = `${workerBase.replace(/\/$/, "")}/s/${id}/`;
+  const iframeSrc = `${workerBase.replace(/\/$/, "")}/s/${id}/?_ph=1`;
 
   return (
     <>
@@ -126,8 +150,10 @@ export default function SandboxPage() {
         src={iframeSrc}
         className="w-full h-screen border-0"
         title={`Sandbox ${id}`}
+        onLoad={onSandboxFrameLoad}
       />
       <SandboxVoice sandboxId={id} />
+      <SandboxHumeTelemetry sandboxId={id} />
     </>
   );
 }

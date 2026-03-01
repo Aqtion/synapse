@@ -4,6 +4,7 @@ import { UserProvider } from "@/contexts/UserContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { DevConsoleFilter } from "@/components/DevConsoleFilter";
 import { Inter, DM_Serif_Display, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -84,6 +85,7 @@ export default function RootLayout({
           <ConvexClientProvider>
             <UserProvider>
               <TooltipProvider>
+                <DevConsoleFilter />
                 <div className="min-h-screen w-full flex flex-col">{children}</div>
                 <Toaster />
               </TooltipProvider>

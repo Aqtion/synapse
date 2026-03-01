@@ -34,6 +34,8 @@ export interface UseHumeStreamOptions {
   onError?: (error: Error) => void;
   onRawMessage?: (raw: HumeStreamMessage) => void;
   enabled?: boolean;
+  /** When true, log Hume message summaries to console (for debugging emotion/parsing). */
+  debug?: boolean;
 }
 
 export interface UseHumeStreamReturn {

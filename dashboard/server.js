@@ -3,7 +3,7 @@ const { parse } = require("url");
 const next = require("next");
 const WebSocket = require("ws");
 const { WebSocketServer } = require("ws");
-const { spawn } = require("child_process");
+const spawn = require("cross-spawn");
 
 require("dotenv").config({ path: ".env.local" });
 require("dotenv").config();
@@ -16,6 +16,8 @@ const handle = app.getRequestHandler();
 
 const ELEVENLABS_STT_URL =
   "wss://api.elevenlabs.io/v1/speech-to-text/realtime?audio_format=pcm_16000";
+
+const HUME_STREAM_URL = "wss://api.hume.ai/v0/stream/models";
 
 function forwardToClient(clientWs, payload) {
   if (clientWs.readyState !== 1) return; // OPEN
@@ -159,6 +161,79 @@ function handleSttClient(clientWs) {
   });
 }
 
+/** Hume Expression Measurement WebSocket proxy: adds X-Hume-Api-Key header (browser cannot). */
+function handleHumeStreamClient(clientWs) {
+  const apiKey = process.env.HUME_API_KEY || process.env.NEXT_PUBLIC_HUME_API_KEY;
+  if (!apiKey) {
+    try {
+      clientWs.send(JSON.stringify({ error: "Hume API key missing: set HUME_API_KEY or NEXT_PUBLIC_HUME_API_KEY", code: "config" }));
+    } catch (_) {}
+    clientWs.close(1011, "Server configuration error");
+    return;
+  }
+
+  let upstream = null;
+  const cleanup = () => {
+    if (upstream) {
+      try {
+        upstream.removeAllListeners();
+        if (upstream.readyState === 1) upstream.close(1000, "Client closed");
+      } catch (_) {}
+      upstream = null;
+    }
+  };
+
+  try {
+    upstream = new WebSocket(HUME_STREAM_URL, {
+      headers: { "X-Hume-Api-Key": apiKey },
+    });
+  } catch (err) {
+    try {
+      clientWs.send(JSON.stringify({ error: err.message || "Failed to connect to Hume", code: "connect" }));
+    } catch (_) {}
+    clientWs.close(1011, "Upstream connect failed");
+    return;
+  }
+
+  upstream.on("open", () => {});
+
+  upstream.on("message", (data) => {
+    if (clientWs.readyState !== 1) return;
+    try {
+      if (Buffer.isBuffer(data)) clientWs.send(data);
+      else if (typeof data === "string") clientWs.send(data);
+      else clientWs.send(data.toString());
+    } catch (_) {}
+  });
+
+  upstream.on("close", (code, reason) => {
+    try {
+      if (clientWs.readyState === 1) clientWs.close(code, reason);
+    } catch (_) {}
+    cleanup();
+  });
+
+  upstream.on("error", () => {
+    try {
+      if (clientWs.readyState === 1) clientWs.send(JSON.stringify({ error: "Hume WebSocket error", code: "upstream_error" }));
+      clientWs.close(1011, "Upstream error");
+    } catch (_) {}
+    cleanup();
+  });
+
+  clientWs.on("message", (data) => {
+    if (!upstream || upstream.readyState !== 1) return;
+    try {
+      // Hume expects JSON text frames; sending as string ensures text frame (not binary).
+      const text = Buffer.isBuffer(data) ? data.toString("utf8") : typeof data === "string" ? data : String(data);
+      upstream.send(text);
+    } catch (_) {}
+  });
+
+  clientWs.on("close", () => cleanup());
+  clientWs.on("error", () => cleanup());
+}
+
 /** In dev: proxy WebSocket upgrade for /_next/* to Next dev server on targetPort */
 function proxyHmrUpgrade(request, socket, head, targetPort) {
   const hmrWss = new WebSocketServer({ noServer: true });
@@ -236,6 +311,7 @@ async function runDev() {
     cwd: __dirname,
     stdio: "inherit",
     env: { ...process.env, NODE_ENV: "development" },
+    windowsHide: true,
   });
   nextChild.on("error", (err) => {
     console.error("Failed to start Next dev:", err);
@@ -252,13 +328,26 @@ async function runDev() {
       });
       return;
     }
+    if (pathname.startsWith("/ws/hume-stream")) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+      });
+      return;
+    }
     if (pathname.startsWith("/_next/")) {
       proxyHmrUpgrade(request, socket, head, NEXT_DEV_PORT);
       return;
     }
     socket.destroy();
   });
-  wss.on("connection", (clientWs) => handleSttClient(clientWs));
+  wss.on("connection", (clientWs, request) => {
+    const pathname = request?.url?.split("?")[0] ?? "";
+    if (pathname.startsWith("/ws/hume-stream")) {
+      handleHumeStreamClient(clientWs);
+      return;
+    }
+    handleSttClient(clientWs);
+  });
   server.listen(port, (err) => {
     if (err) throw err;
     console.log(`> Ready on http://localhost:${port} (proxying to :${NEXT_DEV_PORT}, /ws/stt here)`);
@@ -288,13 +377,24 @@ function runProd() {
         });
         return;
       }
+      if (pathname.startsWith("/ws/hume-stream")) {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit("connection", ws, request);
+        });
+        return;
+      }
       if (pathname.startsWith("/_next/")) {
         return;
       }
       socket.destroy();
     });
 
-    wss.on("connection", (clientWs) => {
+    wss.on("connection", (clientWs, request) => {
+      const pathname = request?.url?.split("?")[0] ?? "";
+      if (pathname.startsWith("/ws/hume-stream")) {
+        handleHumeStreamClient(clientWs);
+        return;
+      }
       handleSttClient(clientWs);
     });
 
